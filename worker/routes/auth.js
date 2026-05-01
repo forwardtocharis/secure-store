@@ -55,7 +55,10 @@ auth.post('/verify', passphraseRateLimit, async (c) => {
     exp: Math.floor(Date.now() / 1000) + 15 * 60, // 15 min expiration
   };
 
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET || 'dev-secret-1234567890');
+  if (!c.env.JWT_SECRET) {
+    return c.json({ error: 'Internal server error: missing JWT secret' }, 500);
+  }
+  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
   const token = await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .sign(secret);
