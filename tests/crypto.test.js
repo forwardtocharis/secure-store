@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
-import { derivePassphraseKey } from '../src/crypto/passphrase.js';
+// import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
 
 test('MEK generation, wrapping and unwrapping with AES-KW', async () => {
@@ -32,10 +32,34 @@ test('MEK generation, wrapping and unwrapping with AES-KW', async () => {
   await assert.rejects(
     unwrapMEK(wrappedMEK, wrongKey),
     (err) => {
+      assert.ok(err instanceof DOMException, 'Should be a DOMException');
       assert.strictEqual(err.name, 'OperationError');
       return true;
     },
-    'Unwrapping with wrong key should throw'
+    'Unwrapping with wrong key should throw OperationError'
+  );
+
+  // Test with corrupted ciphertext
+  const corruptedMEK = wrappedMEK.substring(0, wrappedMEK.length - 8) + 'AAAAAAAA';
+  await assert.rejects(
+    unwrapMEK(corruptedMEK, wrappingKey),
+    (err) => {
+      assert.ok(err instanceof DOMException, 'Should be a DOMException');
+      assert.strictEqual(err.name, 'OperationError');
+      return true;
+    },
+    'Unwrapping corrupted MEK should throw OperationError'
+  );
+
+  // Test with invalid base64
+  await assert.rejects(
+    unwrapMEK('!!!NotBase64!!!', wrappingKey),
+    (err) => {
+      // atob throws InvalidCharacterError in many environments
+      assert.ok(err instanceof Error);
+      return true;
+    },
+    'Unwrapping invalid base64 should throw'
   );
 });
 
