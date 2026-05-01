@@ -7,7 +7,11 @@ export async function verifySession(c, next) {
   }
 
   const token = authHeader.substring(7);
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET || 'dev-secret-1234567890');
+
+  if (!c.env.JWT_SECRET) {
+    return c.json({ error: 'Internal server error: missing JWT secret' }, 500);
+  }
+  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
 
   try {
     const { payload } = await jwtVerify(token, secret);
