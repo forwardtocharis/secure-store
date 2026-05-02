@@ -15,6 +15,7 @@ export function ItemEditor({ item, onClose }) {
   const [type, setType] = useState(item?.type || 'login');
   const [fields, setFields] = useState([]);
   const [attachments, setAttachments] = useState([]);
+  const [error, setError] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -33,21 +34,26 @@ export function ItemEditor({ item, onClose }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    const payload = {
-      id: itemId,
-      name,
-      type,
-      updatedAt: new Date().toISOString(),
-      fields,
-      attachmentRefs: attachments
-    };
+    setError('');
+    try {
+      const payload = {
+        id: itemId,
+        name,
+        type,
+        updatedAt: new Date().toISOString(),
+        fields,
+        attachmentRefs: attachments
+      };
 
-    if (isNew) {
-      await addItem(payload);
-    } else {
-      await updateItem(payload);
+      if (isNew) {
+        await addItem(payload);
+      } else {
+        await updateItem(payload);
+      }
+      onClose();
+    } catch (err) {
+      setError('Save failed: ' + err.message);
     }
-    onClose();
   };
 
   const addField = () => {
@@ -70,6 +76,7 @@ export function ItemEditor({ item, onClose }) {
     const file = e.target.files[0];
     if (!file) return;
 
+    setError('');
     try {
       const buffer = await file.arrayBuffer();
       const fileBytes = new Uint8Array(buffer);
@@ -116,12 +123,12 @@ export function ItemEditor({ item, onClose }) {
       setAttachments([...attachments, newRef]);
 
     } catch (err) {
-      console.error(err);
-      alert('Upload failed: ' + err.message);
+      setError('Upload failed: ' + err.message);
     }
   };
 
   const downloadAttachment = async (ref) => {
+    setError('');
     try {
       if (!itemId) throw new Error("Save item first before downloading");
 
@@ -159,8 +166,7 @@ export function ItemEditor({ item, onClose }) {
       URL.revokeObjectURL(url);
 
     } catch (err) {
-      console.error(err);
-      alert('Download failed: ' + err.message);
+      setError('Download failed: ' + err.message);
     }
   };
 
@@ -178,6 +184,11 @@ export function ItemEditor({ item, onClose }) {
       </div>
 
       <form onSubmit={handleSave}>
+        {error && (
+          <div style={{ color: 'red', marginBottom: '1rem', border: '1px solid red', padding: '0.5rem', borderRadius: '4px' }}>
+            {error}
+          </div>
+        )}
         <div style={{ marginBottom: '1rem' }}>
           <label style={{ display: 'block' }}>Name</label>
           <input
