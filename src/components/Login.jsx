@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { api } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
 import { serializeCredential } from '../crypto/util.js';
+import { authenticatePasskey } from '../crypto/prf.js';
+import { unwrapMEK } from '../crypto/mek.js';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -15,8 +17,8 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      const { token, email: userEmail } = await api.login(email, password);
-      loginIdentity(token, userEmail);
+      const { token, email: userEmail, wrappedKeys: keys } = await api.login(email, password);
+      loginIdentity(token, userEmail, null, keys);
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -28,23 +30,36 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      // 1. Get challenge
-      const { challenge } = await api.getChallenge();
-      
-      // 2. Authenticate
-      const assertion = await navigator.credentials.get({
-        publicKey: {
-          challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
-          userVerification: "required",
+      // 1. Get combined assertion + PRF secret
+      const { assertion, unwrappingKey } = await authenticatePasskey(
+        null, // Use resident key lookup
+        async () => {
+          const res = await api.getChallenge();
+          return Uint8Array.from(atob(res.challenge), c => c.charCodeAt(0));
         }
-      });
+      );
 
       const credentialId = btoa(String.fromCharCode(...new Uint8Array(assertion.rawId)));
       const serializedAssertion = serializeCredential(assertion);
       
-      // 3. Login with backend
-      const { token, email: userEmail } = await api.loginPasskey(email || null, credentialId, serializedAssertion);
-      loginIdentity(token, userEmail);
+      // 2. Login with backend (now returns keys too)
+      const { token, email: userEmail, wrappedKeys } = await api.loginPasskey(email || null, credentialId, serializedAssertion);
+      
+      // 3. Try to auto-unlock if PRF is supported
+      let autoMek = null;
+      if (unwrappingKey && wrappedKeys) {
+        const prfKeyData = wrappedKeys.find(k => k.type === 'prf' && k.credentialId === credentialId);
+        if (prfKeyData) {
+          try {
+            autoMek = await unwrapMEK(prfKeyData.wrappedMEK, unwrappingKey);
+            console.log("Single-Tap Unlock Success!");
+          } catch (err) {
+            console.warn("Single-Tap PRF unwrap failed (likely domain mismatch), falling back to Layer 1 login.", err);
+          }
+        }
+      }
+
+      await loginIdentity(token, userEmail, autoMek, wrappedKeys);
     } catch (err) {
       setError('Passkey login failed: ' + err.message);
     } finally {

@@ -13,11 +13,15 @@ export function Unlock() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('passphrase'); // passphrase, passkey, or recovery
-  const { unlockVault } = useVault();
+  const { unlockVault, wrappedKeys } = useVault();
 
   useEffect(() => {
-    api.getKeys().then(setKeys).catch(err => setError(err.message));
-  }, []);
+    if (wrappedKeys) {
+      setKeys(wrappedKeys);
+    } else {
+      api.getKeys().then(setKeys).catch(err => setError(err.message));
+    }
+  }, [wrappedKeys]);
 
   const handlePassphraseUnlock = async (e) => {
     e.preventDefault();

@@ -28,7 +28,8 @@ auth.post('/login', async (c) => {
     .setExpirationTime('2h')
     .sign(secret);
 
-  return c.json({ token, email: user.email });
+  const wrappedKeys = await getWrappedKeys(c.env.KV, user.id);
+  return c.json({ token, email: user.email, wrappedKeys });
 });
 
 // POST /api/auth/login-passkey
@@ -60,7 +61,8 @@ auth.post('/login-passkey', async (c) => {
     .setExpirationTime('2h')
     .sign(secret);
 
-  return c.json({ token, email: user.email });
+  const wrappedKeys = await getWrappedKeys(c.env.KV, user.id);
+  return c.json({ token, email: user.email, wrappedKeys });
 });
 
 // All following routes require the Layer 1 JWT

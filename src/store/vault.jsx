@@ -10,6 +10,7 @@ export function VaultProvider({ children }) {
   const [identity, setIdentity] = useState(null); // { token, email }
   const [mek, setMek] = useState(null);
   const [items, setItems] = useState([]);
+  const [wrappedKeys, setWrappedKeys] = useState(null);
   const [loading, setLoading] = useState(true);
   
   const activityTimeoutRef = useRef(null);
@@ -46,11 +47,15 @@ export function VaultProvider({ children }) {
     };
   }, [mek]); // Re-run when MEK changes to start/stop the timer
 
-  const loginIdentity = (token, email) => {
+  const loginIdentity = async (token, email, autoMek = null, keys = null) => {
     sessionStorage.setItem('vault:token', token);
     sessionStorage.setItem('vault:email', email);
     api.setToken(token);
     setIdentity({ token, email });
+    if (keys) setWrappedKeys(keys);
+    if (autoMek) {
+      await unlockVault(autoMek);
+    }
   };
 
   const unlockVault = async (newMek) => {
@@ -134,7 +139,7 @@ export function VaultProvider({ children }) {
 
   return (
     <VaultContext.Provider value={{
-      identity, mek, items, loginIdentity, unlockVault, logout, loading, addItem, updateItem, deleteItem, refresh: loadIndex, getItemFull
+      identity, mek, items, wrappedKeys, loginIdentity, unlockVault, logout, loading, addItem, updateItem, deleteItem, refresh: loadIndex, getItemFull
     }}>
       {children}
     </VaultContext.Provider>
