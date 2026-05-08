@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
+import { serializeCredential } from '../crypto/util.js';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -39,9 +40,10 @@ export function Login() {
       });
 
       const credentialId = btoa(String.fromCharCode(...new Uint8Array(assertion.rawId)));
+      const serializedAssertion = serializeCredential(assertion);
       
       // 3. Login with backend
-      const { token, email: userEmail } = await api.loginPasskey(email || null, credentialId, assertion);
+      const { token, email: userEmail } = await api.loginPasskey(email || null, credentialId, serializedAssertion);
       loginIdentity(token, userEmail);
     } catch (err) {
       setError('Passkey login failed: ' + err.message);

@@ -32,6 +32,32 @@ export function base64urlDecode(base64url) {
   return base64Decode(base64);
 }
 
+export function serializeCredential(cred) {
+  const obj = {
+    id: cred.id,
+    type: cred.type,
+    rawId: base64urlEncode(cred.rawId),
+    response: {
+      clientDataJSON: base64urlEncode(cred.response.clientDataJSON),
+    }
+  };
+
+  if (cred.response.attestationObject) {
+    obj.response.attestationObject = base64urlEncode(cred.response.attestationObject);
+  }
+  if (cred.response.authenticatorData) {
+    obj.response.authenticatorData = base64urlEncode(cred.response.authenticatorData);
+  }
+  if (cred.response.signature) {
+    obj.response.signature = base64urlEncode(cred.response.signature);
+  }
+  if (cred.response.userHandle) {
+    obj.response.userHandle = base64urlEncode(cred.response.userHandle);
+  }
+
+  return obj;
+}
+
 export function buf2hex(buffer) {
   return [...new Uint8Array(buffer)]
       .map(x => x.toString(16).padStart(2, '0'))

@@ -74,7 +74,14 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
   return { assertion, unwrappingKey };
 }
 
+async function getChecksum(buffer) {
+  const hash = await crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8);
+}
+
 export async function derivePRFKey(prfOutput) {
+  const checksum = await getChecksum(prfOutput);
+  console.log(`Deriving key from PRF output (len: ${prfOutput.byteLength}, checksum: ${checksum})`);
   const raw = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
     { name: "HKDF", hash: "SHA-256", salt: PRF_SALT, info: new TextEncoder().encode("mek-wrapping-v1") },

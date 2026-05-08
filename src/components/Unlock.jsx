@@ -5,6 +5,7 @@ import { authenticatePasskey } from '../crypto/prf.js';
 import { derivePassphraseKey } from '../crypto/passphrase.js';
 import { unwrapMEK, generateMEK, wrapMEK } from '../crypto/mek.js';
 import { encryptVaultItem } from '../crypto/vault.js';
+import { serializeCredential } from '../crypto/util.js';
 
 export function Unlock() {
   const [keys, setKeys] = useState([]);
@@ -127,10 +128,12 @@ export function Unlock() {
         }
       );
 
+      const serializedAssertion = serializeCredential(assertion);
       const mek = await unwrapMEK(prfKey.wrappedMEK, unwrappingKey);
-      await api.verifyAuth('prf', assertion);
+      await api.verifyAuth('prf', serializedAssertion);
       await unlockVault(mek);
     } catch (err) {
+      console.error("Passkey Unlock Error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
