@@ -1,7 +1,13 @@
 import React, { useState, useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useVault } from '../store/vault.jsx';
 import { ItemEditor } from './ItemEditor.jsx';
 import { Settings } from './Settings.jsx';
+
+const IS_ANDROID = Capacitor.getPlatform() === 'android';
+
+const TYPE_ICONS = { entity: '📂', login: '🔑', document: '📄', note: '📝', identity: '🪪' };
+const TYPE_LABELS = { entity: 'Entity', login: 'Password', document: 'Document', note: 'Note', identity: 'Identity' };
 
 export function Vault() {
   const { items, logout, deleteItem, identity } = useVault();
@@ -10,8 +16,8 @@ export function Vault() {
   const [showSettings, setShowSettings] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
-  // Optimized Search & Filter Logic
   const filteredItems = useMemo(() => {
     return items.filter(item => {
       const matchesType = filterType === 'all' || item.type === filterType;
@@ -20,16 +26,14 @@ export function Vault() {
     });
   }, [items, filterType, searchQuery]);
 
-  const stats = {
+  const stats = useMemo(() => ({
     total: items.length,
     logins: items.filter(i => i.type === 'login').length,
     docs: items.filter(i => i.type === 'document').length,
     notes: items.filter(i => i.type === 'note').length,
-  };
+  }), [items]);
 
-  if (showSettings) {
-    return <Settings onBack={() => setShowSettings(false)} />;
-  }
+  if (showSettings) return <Settings onBack={() => setShowSettings(false)} />;
 
   if (editingItem || isCreating) {
     return (
@@ -40,12 +44,183 @@ export function Vault() {
     );
   }
 
+  if (IS_ANDROID) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: 'var(--bg-deep)', overflow: 'hidden' }}>
+
+        {/* Top App Bar */}
+        <header style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 8px 0 16px',
+          height: '64px',
+          backgroundColor: '#000',
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
+          gap: '4px',
+          paddingTop: 'env(safe-area-inset-top)'
+        }}>
+          <span style={{ fontSize: '1.3rem' }}>🛡️</span>
+          <h1 style={{
+            flex: 1,
+            margin: '0 0 0 8px',
+            fontSize: '1.2rem',
+            fontWeight: '900',
+            color: 'var(--accent)',
+            letterSpacing: '-0.02em'
+          }}>
+            SecureStore
+          </h1>
+          <button
+            onClick={() => {
+              setShowSearch(s => !s);
+              if (showSearch) setSearchQuery('');
+            }}
+            className="icon-btn"
+            style={{ color: showSearch ? 'var(--accent)' : 'var(--text-dim)' }}
+            aria-label="Search"
+          >
+            🔍
+          </button>
+          <button
+            onClick={logout}
+            className="icon-btn"
+            style={{ color: 'var(--text-dim)' }}
+            aria-label="Lock vault"
+          >
+            🔒
+          </button>
+        </header>
+
+        {/* Collapsible Search Bar */}
+        {showSearch && (
+          <div style={{
+            padding: '8px 16px',
+            backgroundColor: 'var(--bg-surface)',
+            borderBottom: '1px solid var(--border)',
+            flexShrink: 0
+          }}>
+            <div style={{ position: 'relative' }}>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search vault..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 40px 10px 16px',
+                  fontSize: '1rem',
+                  borderRadius: '24px',
+                  backgroundColor: 'var(--bg-card)'
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute', right: '8px', top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'var(--border)', border: 'none', color: '#fff',
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}
+                >✕</button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Item List */}
+        <main style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+          {filteredItems.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '5rem 2rem', color: 'var(--text-dim)' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>
+                {searchQuery ? '🧐' : '📭'}
+              </div>
+              <p style={{ margin: '0 0 1rem' }}>
+                {searchQuery ? `No matches for "${searchQuery}"` : 'No items in this category.'}
+              </p>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ color: 'var(--accent)', background: 'none', border: 'none', fontWeight: 'bold', fontSize: '1rem' }}
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredItems.map(item => (
+              <MobileVaultRow
+                key={item.id}
+                item={item}
+                onEdit={() => setEditingItem(item)}
+                onDelete={() => { if (confirm('Delete this item?')) deleteItem(item.id); }}
+              />
+            ))
+          )}
+          {/* Spacer so FAB doesn't cover last item */}
+          <div style={{ height: '88px' }} />
+        </main>
+
+        {/* FAB */}
+        <button
+          onClick={() => setIsCreating(true)}
+          style={{
+            position: 'fixed',
+            bottom: 'calc(64px + env(safe-area-inset-bottom) + 16px)',
+            right: '20px',
+            width: '56px',
+            height: '56px',
+            borderRadius: '16px',
+            backgroundColor: 'var(--accent)',
+            color: '#000',
+            border: 'none',
+            fontSize: '1.75rem',
+            fontWeight: 'bold',
+            boxShadow: '0 4px 20px var(--accent-glow)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100
+          }}
+          aria-label="Add new item"
+        >
+          +
+        </button>
+
+        {/* Bottom Navigation */}
+        <nav style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 'calc(64px + env(safe-area-inset-bottom))',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          backgroundColor: '#000',
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'stretch',
+          zIndex: 200
+        }}>
+          <BottomNavItem label="All" icon="📦" active={filterType === 'all'} count={stats.total} onClick={() => setFilterType('all')} />
+          <BottomNavItem label="Passwords" icon="🔑" active={filterType === 'login'} count={stats.logins} onClick={() => setFilterType('login')} />
+          <BottomNavItem label="Documents" icon="📄" active={filterType === 'document'} count={stats.docs} onClick={() => setFilterType('document')} />
+          <BottomNavItem label="Notes" icon="📝" active={filterType === 'note'} count={stats.notes} onClick={() => setFilterType('note')} />
+          <BottomNavItem label="Settings" icon="⚙️" active={false} onClick={() => setShowSettings(true)} />
+        </nav>
+      </div>
+    );
+  }
+
+  // Desktop / web layout
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-deep)' }}>
       {/* Sidebar */}
-      <aside style={{ 
-        width: '300px', 
-        borderRight: '1px solid var(--border)', 
+      <aside style={{
+        width: '300px',
+        borderRight: '1px solid var(--border)',
         padding: '3rem 1.5rem',
         display: 'flex',
         flexDirection: 'column',
@@ -56,7 +231,7 @@ export function Vault() {
         <h1 style={{ color: 'var(--accent)', fontSize: '1.75rem', marginBottom: '3rem', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: '900' }}>
           <span style={{ fontSize: '1.5rem' }}>🛡️</span> SecureStore
         </h1>
-        
+
         <nav style={{ flex: 1 }}>
           <SidebarItem label="All Items" icon="📦" active={filterType === 'all'} onClick={() => setFilterType('all')} count={stats.total} />
           <SidebarItem label="Entities" icon="📂" active={filterType === 'entity'} onClick={() => setFilterType('entity')} count={items.filter(i => i.type === 'entity').length} />
@@ -67,10 +242,10 @@ export function Vault() {
           <SidebarItem label="Vault Settings" icon="⚙️" onClick={() => setShowSettings(true)} />
         </nav>
 
-        <div style={{ 
-          marginTop: 'auto', 
-          padding: '1.5rem', 
-          borderRadius: '16px', 
+        <div style={{
+          marginTop: 'auto',
+          padding: '1.5rem',
+          borderRadius: '16px',
           backgroundColor: 'var(--bg-surface)',
           border: '1px solid var(--border)',
           boxShadow: '0 10px 20px rgba(0,0,0,0.2)'
@@ -79,16 +254,18 @@ export function Vault() {
           <div style={{ fontSize: '0.95rem', fontWeight: '800', marginBottom: '1.5rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {identity?.email}
           </div>
-          <button onClick={logout} style={{ 
-            width: '100%', 
-            padding: '0.75rem', 
-            borderRadius: '10px', 
-            border: '1px solid var(--error)', 
+          <button onClick={logout} style={{
+            width: '100%',
+            padding: '0.75rem',
+            borderRadius: '10px',
+            border: '1px solid var(--error)',
             color: 'var(--error)',
             backgroundColor: 'transparent',
             fontSize: '0.85rem',
             fontWeight: '800'
-          }}>Lock Vault</button>
+          }}>
+            Lock Vault
+          </button>
         </div>
       </aside>
 
@@ -100,45 +277,43 @@ export function Vault() {
             <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', maxWidth: '700px' }}>
               <div style={{ position: 'relative', flex: 1 }}>
                 <span style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', fontSize: '1.2rem' }}>🔍</span>
-                <input 
-                  type="text" 
-                  placeholder="Search vault items..." 
+                <input
+                  type="text"
+                  placeholder="Search vault items..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  style={{ 
-                    width: '100%', 
-                    padding: '1rem 1.5rem 1rem 3.5rem', 
-                    borderRadius: '14px', 
+                  style={{
+                    width: '100%',
+                    padding: '1rem 1.5rem 1rem 3.5rem',
+                    borderRadius: '14px',
                     fontSize: '1.1rem',
                     backgroundColor: 'var(--bg-surface)',
                     border: '1px solid var(--border)',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                  }} 
+                  }}
                 />
                 {searchQuery && (
-                  <button 
+                  <button
                     onClick={() => setSearchQuery('')}
-                    style={{ 
-                      position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', 
+                    style={{
+                      position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)',
                       background: 'var(--border)', border: 'none', color: '#fff', padding: '0.4rem',
                       borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: '0.7rem'
                     }}
-                  >
-                    ✕
-                  </button>
+                  >✕</button>
                 )}
               </div>
             </div>
           </div>
-          <button 
-            onClick={() => setIsCreating(true)} 
-            style={{ 
-              padding: '1rem 2rem', 
-              borderRadius: '12px', 
-              backgroundColor: 'var(--accent)', 
-              color: '#000', 
-              border: 'none', 
+          <button
+            onClick={() => setIsCreating(true)}
+            style={{
+              padding: '1rem 2rem',
+              borderRadius: '12px',
+              backgroundColor: 'var(--accent)',
+              color: '#000',
+              border: 'none',
               fontWeight: '900',
               fontSize: '1.1rem',
               boxShadow: '0 0 30px var(--accent-glow)',
@@ -150,29 +325,33 @@ export function Vault() {
         </header>
 
         {filteredItems.length === 0 ? (
-          <div style={{ 
-            textAlign: 'center', 
-            padding: '5rem', 
-            border: '2px dashed var(--border)', 
+          <div style={{
+            textAlign: 'center',
+            padding: '5rem',
+            border: '2px dashed var(--border)',
             borderRadius: '20px',
             color: 'var(--text-dim)'
           }}>
             <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{searchQuery ? '🧐' : '📭'}</div>
             <p>{searchQuery ? `No matches for "${searchQuery}"` : 'No items found in this category.'}</p>
-            {searchQuery && <button onClick={() => setSearchQuery('')} style={{ color: 'var(--accent)', background: 'none', border: 'none', fontWeight: 'bold' }}>Clear Search</button>}
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} style={{ color: 'var(--accent)', background: 'none', border: 'none', fontWeight: 'bold' }}>
+                Clear Search
+              </button>
+            )}
           </div>
         ) : (
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-            gap: '1.5rem' 
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: '1.5rem'
           }}>
             {filteredItems.map(item => (
-              <VaultCard 
-                key={item.id} 
-                item={item} 
-                onEdit={() => setEditingItem(item)} 
-                onDelete={() => deleteItem(item.id)} 
+              <VaultCard
+                key={item.id}
+                item={item}
+                onEdit={() => setEditingItem(item)}
+                onDelete={() => deleteItem(item.id)}
               />
             ))}
           </div>
@@ -182,15 +361,140 @@ export function Vault() {
   );
 }
 
+function MobileVaultRow({ item, onEdit, onDelete }) {
+  const icon = TYPE_ICONS[item.type] || '📁';
+  const typeLabel = TYPE_LABELS[item.type] || item.type;
+
+  return (
+    <div
+      className="mobile-list-row"
+      onClick={onEdit}
+    >
+      <div style={{
+        width: '44px',
+        height: '44px',
+        borderRadius: '12px',
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '1.3rem',
+        flexShrink: 0
+      }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontWeight: '700',
+          fontSize: '1rem',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          color: 'var(--text-main)'
+        }}>
+          {item.name}
+        </div>
+        <div style={{
+          fontSize: '0.78rem',
+          color: 'var(--text-dim)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          marginTop: '3px'
+        }}>
+          {typeLabel}
+        </div>
+      </div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', flexShrink: 0, marginRight: '4px' }}>
+        {new Date(item.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+      </div>
+      <button
+        onClick={e => { e.stopPropagation(); onDelete(); }}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: 'var(--text-dim)',
+          fontSize: '1rem',
+          padding: '8px',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+        aria-label="Delete item"
+      >
+        🗑️
+      </button>
+    </div>
+  );
+}
+
+function BottomNavItem({ label, icon, active, count, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'none',
+        border: 'none',
+        color: active ? 'var(--accent)' : 'var(--text-dim)',
+        gap: '2px',
+        padding: '4px 0 2px',
+        fontSize: '0.62rem',
+        fontWeight: active ? '700' : '400',
+        transition: 'color 0.15s',
+        position: 'relative',
+        letterSpacing: '0.01em'
+      }}
+    >
+      {active && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: '20%',
+          right: '20%',
+          height: '2px',
+          backgroundColor: 'var(--accent)',
+          borderRadius: '0 0 2px 2px'
+        }} />
+      )}
+      <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>{icon}</span>
+      <span>{label}</span>
+      {count > 0 && !active && (
+        <span style={{
+          position: 'absolute',
+          top: '4px',
+          right: '14%',
+          backgroundColor: 'var(--accent)',
+          color: '#000',
+          borderRadius: '10px',
+          padding: '1px 5px',
+          fontSize: '0.58rem',
+          fontWeight: 'bold',
+          lineHeight: 1.5,
+          minWidth: '16px',
+          textAlign: 'center'
+        }}>
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function SidebarItem({ label, icon, active, onClick, count }) {
   return (
-    <div 
+    <div
       onClick={onClick}
-      style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        padding: '1rem 1.25rem', 
-        borderRadius: '12px', 
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '1rem 1.25rem',
+        borderRadius: '12px',
         marginBottom: '0.5rem',
         cursor: 'pointer',
         backgroundColor: active ? 'rgba(0, 212, 255, 0.1)' : 'transparent',
@@ -202,33 +506,44 @@ function SidebarItem({ label, icon, active, onClick, count }) {
     >
       <span style={{ marginRight: '1.25rem', fontSize: '1.2rem' }}>{icon}</span>
       <span style={{ flex: 1 }}>{label}</span>
-      {count !== undefined && <span style={{ fontSize: '0.85rem', opacity: 0.8, fontWeight: 'bold', backgroundColor: 'rgba(255,255,255,0.05)', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>{count}</span>}
+      {count !== undefined && (
+        <span style={{
+          fontSize: '0.85rem',
+          opacity: 0.8,
+          fontWeight: 'bold',
+          backgroundColor: 'rgba(255,255,255,0.05)',
+          padding: '0.2rem 0.6rem',
+          borderRadius: '20px'
+        }}>
+          {count}
+        </span>
+      )}
     </div>
   );
 }
 
 function VaultCard({ item, onEdit, onDelete }) {
-  const icon = item.type === 'entity' ? '📂' : item.type === 'login' ? '🔑' : item.type === 'document' ? '📄' : '📝';
-  
+  const icon = TYPE_ICONS[item.type] || '📁';
+
   return (
-    <div 
+    <div
       className="animate-fade"
-      style={{ 
-        backgroundColor: 'var(--bg-surface)', 
-        border: '1px solid var(--border)', 
-        borderRadius: '16px', 
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '16px',
         padding: '1.5rem',
         transition: 'all 0.3s',
         position: 'relative',
         cursor: 'pointer'
       }}
       onClick={onEdit}
-      onMouseEnter={(e) => {
+      onMouseEnter={e => {
         e.currentTarget.style.borderColor = 'var(--accent)';
         e.currentTarget.style.transform = 'translateY(-5px)';
         e.currentTarget.style.boxShadow = '0 10px 30px rgba(0,0,0,0.5)';
       }}
-      onMouseLeave={(e) => {
+      onMouseLeave={e => {
         e.currentTarget.style.borderColor = 'var(--border)';
         e.currentTarget.style.transform = 'translateY(0)';
         e.currentTarget.style.boxShadow = 'none';
@@ -236,15 +551,17 @@ function VaultCard({ item, onEdit, onDelete }) {
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
         <div style={{ fontSize: '2rem' }}>{icon}</div>
-        <button onClick={(e) => { e.stopPropagation(); if(confirm('Delete this item?')) onDelete(); }} style={{ 
-          background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '1rem', padding: '0.5rem'
-        }}>🗑️</button>
+        <button
+          onClick={e => { e.stopPropagation(); if (confirm('Delete this item?')) onDelete(); }}
+          style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '1rem', padding: '0.5rem' }}
+        >
+          🗑️
+        </button>
       </div>
       <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</h3>
       <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {item.type}
       </div>
-      
       <div style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
         Updated {new Date(item.updatedAt).toLocaleDateString()}
       </div>
