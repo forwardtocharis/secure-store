@@ -1,14 +1,19 @@
+import { Capacitor } from '@capacitor/core';
 import { base64urlDecode } from './util.js';
 
 // WebAuthn PRF salts MUST be exactly 32 bytes long for maximum compatibility.
 const PRF_SALT = new Uint8Array(32);
 new TextEncoder().encodeInto("vault-prf-v1-fixed-salt-32-bytes", PRF_SALT);
 
+// In a Capacitor Android WebView, location.hostname is 'localhost', which fails
+// RP ID validation. Use the actual production domain when running natively.
+const RP_ID = Capacitor.isNativePlatform() ? 'secure-store.pages.dev' : location.hostname;
+
 export async function enrollPasskey(label) {
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: "SecureStore Vault", id: location.hostname },
+      rp: { name: "SecureStore Vault", id: RP_ID },
       user: {
         id: crypto.getRandomValues(new Uint8Array(16)),
         name: label,
@@ -60,7 +65,7 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
       prfSupportedByBrowser: !!navigator.credentials.getExtensions?.().prf,
       prfEnabledInResult: isEnabled,
       hasResults: !!extensionResults?.prf?.results,
-      hostname: location.hostname
+      hostname: RP_ID
     });
     
     if (isEnabled === false) {
