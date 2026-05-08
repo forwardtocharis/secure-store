@@ -109,3 +109,60 @@ input:focus {
   background: var(--accent);
   color: #000;
 }
+
+/* ── Mobile / Android styles ───────────────────────── */
+
+/* Icon button used in mobile top bars */
+.icon-btn {
+  background: none;
+  border: none;
+  padding: 10px;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.icon-btn:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: none;
+}
+
+/* Mobile list rows (vault item list) */
+.mobile-list-row {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 14px;
+  cursor: pointer;
+  background-color: var(--bg-deep);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.1s;
+}
+
+.mobile-list-row:active {
+  background-color: var(--bg-surface);
+}
+
+/* Field section labels in mobile editor */
+.field-label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-bottom: 7px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Disable hover lift on touch devices (avoids stuck hover on tap) */
+@media (hover: none) {
+  button:hover {
+    transform: none;
+  }
+}
