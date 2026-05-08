@@ -1,15 +1,14 @@
-name = "vault-worker"
+name = "secure-store"
 main = "worker/index.js"
 compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "95dc8c3e4e4f4f798183a30a3d99a4b0"
-preview_id = "local-dev-kv-preview"
+id = "YOUR_KV_NAMESPACE_ID"
 
 [[r2_buckets]]
 binding = "R2"
-bucket_name = "vault-files"
+bucket_name = "YOUR_R2_BUCKET_NAME"
 
 # Use Cloudflare Dashboard for production secrets
 # Use .dev.vars for local development
