@@ -14,8 +14,8 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      const { token } = await api.login(email, password);
-      loginIdentity(token, email);
+      const { token, email: userEmail } = await api.login(email, password);
+      loginIdentity(token, userEmail);
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -41,8 +41,8 @@ export function Login() {
       const credentialId = btoa(String.fromCharCode(...new Uint8Array(assertion.rawId)));
       
       // 3. Login with backend
-      const { token } = await api.loginPasskey(email || 'default', credentialId, assertion);
-      loginIdentity(token, email || 'default');
+      const { token, email: userEmail } = await api.loginPasskey(email || null, credentialId, assertion);
+      loginIdentity(token, userEmail);
     } catch (err) {
       setError('Passkey login failed: ' + err.message);
     } finally {

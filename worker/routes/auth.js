@@ -28,17 +28,22 @@ auth.post('/login', async (c) => {
     .setExpirationTime('2h')
     .sign(secret);
 
-  return c.json({ token });
+  return c.json({ token, email: user.email });
 });
 
 // POST /api/auth/login-passkey
 auth.post('/login-passkey', async (c) => {
   const { email, credentialId, assertion } = await c.req.json();
   const users = await getUsers(c.env.KV);
-  const user = users.find(u => u.email === email);
+  
+  // Try to find user by email first, then fall back to searching all passkeys for the credentialId
+  let user = users.find(u => u.email === email);
+  if (!user) {
+    user = users.find(u => u.passkeys && u.passkeys.some(pk => pk.credentialId === credentialId));
+  }
 
-  if (!user || !user.passkeys) {
-    return c.json({ error: 'User not found or no passkeys registered' }, 401);
+  if (!user) {
+    return c.json({ error: 'User not found or passkey not recognized' }, 401);
   }
 
   const passkey = user.passkeys.find(pk => pk.credentialId === credentialId);
@@ -55,7 +60,7 @@ auth.post('/login-passkey', async (c) => {
     .setExpirationTime('2h')
     .sign(secret);
 
-  return c.json({ token });
+  return c.json({ token, email: user.email });
 });
 
 // All following routes require the Layer 1 JWT
