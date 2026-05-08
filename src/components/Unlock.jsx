@@ -184,6 +184,7 @@ export function Unlock() {
         </div>
       </div>
     );
+  }
 
   return (
     <div style={{ 
