@@ -24,10 +24,11 @@ export async function enrollPasskey(label) {
   });
 
   const extensionResults = credential.getClientExtensionResults();
+  console.log("PRF Enrollment Extension Results:", JSON.stringify(extensionResults, null, 2));
   const prfOutput = extensionResults?.prf?.results?.first;
   
   if (!prfOutput) {
-    console.error("PRF Enrollment Results:", extensionResults);
+    console.error("PRF Enrollment Failed:", extensionResults);
     throw new Error("PRF extension not supported or failed on this device. Ensure you are using a modern browser and a compatible authenticator (TouchID, FaceID, Windows Hello, or a Security Key).");
   }
 
@@ -49,12 +50,24 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
   });
 
   const extensionResults = assertion.getClientExtensionResults();
+  console.log("Full WebAuthn Extension Results:", JSON.stringify(extensionResults, null, 2));
+  
   const prfOutput = extensionResults?.prf?.results?.first;
 
   if (!prfOutput) {
-    console.error("PRF Authentication Results:", extensionResults);
-    // If the browser doesn't return PRF, it might be due to a browser bug or the authenticator losing the PRF state.
-    throw new Error("PRF output missing. This can happen if the browser or authenticator does not support the PRF extension for this specific credential.");
+    const isEnabled = extensionResults?.prf?.enabled;
+    console.error("PRF Authentication Failed. Extension Data:", {
+      prfSupportedByBrowser: !!navigator.credentials.getExtensions?.().prf,
+      prfEnabledInResult: isEnabled,
+      hasResults: !!extensionResults?.prf?.results,
+      hostname: location.hostname
+    });
+    
+    if (isEnabled === false) {
+      throw new Error("PRF extension was explicitly disabled by the authenticator. This usually means the passkey was registered on a different domain or without PRF support.");
+    }
+    
+    throw new Error("PRF output missing. If you just updated the app, you may need to re-enroll your passkey in Settings to enable the PRF extension for this specific domain.");
   }
 
   const unwrappingKey = await derivePRFKey(prfOutput);
