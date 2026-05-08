@@ -125,13 +125,25 @@ export class VaultAPI {
 
   // Helper method for file proxy streams
   async uploadFile(url, fileBytes) {
+    const headers = { ...this.headers };
+    // DO NOT send application/json for binary data
+    headers['Content-Type'] = 'application/octet-stream';
+    
     const res = await fetch(url, {
       method: 'PUT',
-      headers: { ...this.headers },
+      headers,
       body: fileBytes
     });
+    
     if (!res.ok) {
-      throw new Error('Failed to upload file');
+      let errorMessage = 'Failed to upload file';
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // Fallback if not JSON
+      }
+      throw new Error(errorMessage);
     }
   }
 

@@ -36,11 +36,21 @@ files.put('/upload/:fileId', async (c) => {
       return c.json({ error: 'Empty request body' }, 400);
     }
 
-    await c.env.R2.put(r2Key, stream);
+    const contentLength = c.req.header('Content-Length');
+    const contentType = c.req.header('Content-Type') || 'application/octet-stream';
+
+    await c.env.R2.put(r2Key, stream, {
+      httpMetadata: { contentType },
+      // Optional: R2 can use the length for validation
+      ...(contentLength && { size: parseInt(contentLength) })
+    });
     return c.json({ success: true });
   } catch (err) {
     console.error('Streaming upload failed:', err);
-    return c.json({ error: 'Upload streaming failed' }, 500);
+    return c.json({ 
+      error: `Upload streaming failed: ${err.message}`,
+      stack: err.stack 
+    }, 500);
   }
 });
 
