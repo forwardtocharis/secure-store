@@ -204,14 +204,14 @@ export function Unlock() {
         <h1 style={{ marginBottom: '0.75rem', fontSize: '2.25rem' }}>Unlock Vault</h1>
         <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem', fontSize: '1.1rem' }}>Enter your master credentials to decrypt.</p>
 
-        <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '2.5rem', padding: '0.4rem', backgroundColor: '#000', borderRadius: '14px', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '2.5rem', padding: '0.5rem', backgroundColor: '#000', borderRadius: '16px', border: '1px solid var(--border)' }}>
           <button 
             onClick={() => setMode('passphrase')} 
             style={{ 
-              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
-              backgroundColor: mode === 'passphrase' ? 'var(--bg-surface)' : 'transparent',
+              flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', 
+              backgroundColor: mode === 'passphrase' ? 'var(--bg-card)' : 'transparent',
               color: mode === 'passphrase' ? 'var(--accent)' : 'var(--text-dim)',
-              fontSize: '0.85rem', fontWeight: '800'
+              fontSize: '0.9rem', fontWeight: '700'
             }}
           >
             Passphrase
@@ -219,10 +219,10 @@ export function Unlock() {
           <button 
             onClick={() => setMode('passkey')} 
             style={{ 
-              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
-              backgroundColor: mode === 'passkey' ? 'var(--bg-surface)' : 'transparent',
+              flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', 
+              backgroundColor: mode === 'passkey' ? 'var(--bg-card)' : 'transparent',
               color: mode === 'passkey' ? 'var(--accent)' : 'var(--text-dim)',
-              fontSize: '0.85rem', fontWeight: '800'
+              fontSize: '0.9rem', fontWeight: '700'
             }}
           >
             Passkey
@@ -230,10 +230,10 @@ export function Unlock() {
           <button 
             onClick={() => setMode('recovery')} 
             style={{ 
-              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
-              backgroundColor: mode === 'recovery' ? 'var(--bg-surface)' : 'transparent',
-              color: mode === 'recovery' ? '#ffc800' : 'var(--text-dim)',
-              fontSize: '0.85rem', fontWeight: '800'
+              flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', 
+              backgroundColor: mode === 'recovery' ? 'var(--bg-card)' : 'transparent',
+              color: mode === 'recovery' ? '#fbbf24' : 'var(--text-dim)',
+              fontSize: '0.9rem', fontWeight: '700'
             }}
           >
             Recovery
@@ -254,9 +254,10 @@ export function Unlock() {
               type="submit" 
               disabled={loading}
               style={{ 
-                width: '100%', padding: '1.25rem', borderRadius: '12px', 
-                backgroundColor: 'var(--accent)', color: '#000', border: 'none', 
-                fontWeight: '800', fontSize: '1.1rem', opacity: loading ? 0.7 : 1
+                width: '100%', padding: '1.25rem', borderRadius: '14px', 
+                backgroundColor: 'var(--accent)', color: 'var(--text-on-accent)', border: 'none', 
+                fontWeight: '900', fontSize: '1.1rem', opacity: loading ? 0.7 : 1,
+                boxShadow: '0 10px 30px var(--accent-glow)'
               }}
             >
               {loading ? 'Decrypting...' : 'Open Secure Vault'}
@@ -284,21 +285,22 @@ export function Unlock() {
               value={recoveryInput} 
               onChange={e => setRecoveryInput(e.target.value)}
               required
-              style={{ width: '100%', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center', color: '#ffc800', border: '1px solid #ffc800' }}
+              style={{ width: '100%', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center', color: '#fbbf24', border: '1px solid #fbbf24' }}
             />
             <button 
               type="submit" 
               disabled={loading}
               style={{ 
-                width: '100%', padding: '1.25rem', borderRadius: '12px', 
-                backgroundColor: '#ffc800', color: '#000', border: 'none', 
-                fontWeight: '800', fontSize: '1.1rem', opacity: loading ? 0.7 : 1
+                width: '100%', padding: '1.25rem', borderRadius: '14px', 
+                backgroundColor: '#fbbf24', color: '#000', border: 'none', 
+                fontWeight: '900', fontSize: '1.1rem', opacity: loading ? 0.7 : 1,
+                boxShadow: '0 10px 30px rgba(251, 191, 36, 0.2)'
               }}
             >
               {loading ? 'Recovering...' : 'Restore Vault Access'}
             </button>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginTop: '1.5rem' }}>
-              <strong style={{ color: '#ffc800' }}>Warning:</strong> Recovery will grant full access to the vault.
+              <strong style={{ color: '#fbbf24' }}>Warning:</strong> Recovery will grant full access to the vault.
             </p>
           </form>
         )}

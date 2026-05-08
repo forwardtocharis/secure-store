@@ -130,10 +130,10 @@ export function Login() {
             style={{
               width: '100%',
               padding: '1.25rem',
-              borderRadius: '12px',
+              borderRadius: '14px',
               border: 'none',
               backgroundColor: 'var(--accent)',
-              color: '#000',
+              color: 'var(--text-on-accent)',
               fontWeight: '900',
               fontSize: '1.1rem',
               cursor: 'pointer',
