@@ -1,4 +1,6 @@
-const API_BASE = '/api';
+import { Capacitor } from '@capacitor/core';
+
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export class VaultAPI {
   constructor(token = null) {
