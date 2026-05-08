@@ -1,0 +1,5 @@
+import app from "../../worker/index.js";
+
+export const onRequest = (context) => {
+  return app.fetch(context.request, context.env, context);
+};

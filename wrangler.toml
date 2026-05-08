@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "local-dev-kv"
+id = "95dc8c3e4e4f4f798183a30a3d99a4b0"
 preview_id = "local-dev-kv-preview"
 
 [[r2_buckets]]
