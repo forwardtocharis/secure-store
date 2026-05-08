@@ -22,7 +22,17 @@ export function ItemEditor({ item, onClose }) {
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
 
+  // Pending scan: bytes ready but waiting for user to name it
+  const [pendingScan, setPendingScan] = useState(null); // { bytes, defaultName }
+  const [pendingScanName, setPendingScanName] = useState('');
+  const [uploadingPending, setUploadingPending] = useState(false);
+
+  // Inline rename for existing attachments
+  const [renamingIdx, setRenamingIdx] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+
   const fileInputRef = useRef(null);
+  const pendingNameRef = useRef(null);
 
   useEffect(() => {
     if (!isNew) {
@@ -42,18 +52,12 @@ export function ItemEditor({ item, onClose }) {
     setSaving(true);
     try {
       const payload = {
-        id: itemId,
-        name,
-        type,
+        id: itemId, name, type,
         updatedAt: new Date().toISOString(),
-        fields,
-        attachmentRefs: attachments
+        fields, attachmentRefs: attachments
       };
-      if (isNew) {
-        await addItem(payload);
-      } else {
-        await updateItem(payload);
-      }
+      if (isNew) await addItem(payload);
+      else await updateItem(payload);
       onClose();
     } catch (err) {
       setError('Save failed: ' + err.message);
@@ -63,9 +67,8 @@ export function ItemEditor({ item, onClose }) {
   };
 
   const addField = () => setFields(f => [...f, { label: '', value: '', sensitive: false }]);
-  const updateField = (index, key, value) => {
+  const updateField = (index, key, value) =>
     setFields(f => f.map((field, i) => i === index ? { ...field, [key]: value } : field));
-  };
   const removeField = (index) => setFields(f => f.filter((_, i) => i !== index));
 
   const encryptAndUpload = async (bytes, filename) => {
@@ -83,10 +86,7 @@ export function ItemEditor({ item, onClose }) {
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      setError('File too large. Maximum size is 20MB.');
-      return;
-    }
+    if (file.size > 20 * 1024 * 1024) { setError('File too large. Maximum size is 20MB.'); return; }
     try {
       const buffer = await file.arrayBuffer();
       const ref = await encryptAndUpload(new Uint8Array(buffer), file.name);
@@ -101,26 +101,55 @@ export function ItemEditor({ item, onClose }) {
     setScanning(true);
     try {
       const result = await DocumentScanner.scanDocument();
-      const { pdfBase64 } = result;
-
-      const binaryStr = atob(pdfBase64);
+      const binaryStr = atob(result.pdfBase64);
       const bytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filename = `scan_${timestamp}.pdf`;
-
-      const ref = await encryptAndUpload(bytes, filename);
-      setAttachments(a => [...a, ref]);
-      if (type === 'login' || type === 'note') setType('document');
+      const date = new Date().toISOString().slice(0, 10);
+      const defaultName = `scan_${date}.pdf`;
+      setPendingScan({ bytes });
+      setPendingScanName(defaultName);
+      setTimeout(() => pendingNameRef.current?.select(), 80);
     } catch (err) {
-      if (!err.message?.toLowerCase().includes('cancel')) {
-        setError('Scan failed: ' + err.message);
-      }
+      if (!err.message?.toLowerCase().includes('cancel')) setError('Scan failed: ' + err.message);
     } finally {
       setScanning(false);
     }
   };
+
+  const handleConfirmScan = async () => {
+    if (!pendingScan) return;
+    const filename = pendingScanName.trim() || 'scan.pdf';
+    setUploadingPending(true);
+    setError('');
+    try {
+      const ref = await encryptAndUpload(pendingScan.bytes, filename);
+      setAttachments(a => [...a, ref]);
+      if (type === 'login' || type === 'note') setType('document');
+      setPendingScan(null);
+      setPendingScanName('');
+    } catch (err) {
+      setError('Upload failed: ' + err.message);
+    } finally {
+      setUploadingPending(false);
+    }
+  };
+
+  const startRename = (idx) => {
+    setRenamingIdx(idx);
+    setRenameValue(attachments[idx].filename);
+  };
+
+  const confirmRename = (idx) => {
+    const newName = renameValue.trim();
+    if (newName) {
+      setAttachments(a => a.map((att, i) => i === idx ? { ...att, filename: newName } : att));
+    }
+    setRenamingIdx(null);
+    setRenameValue('');
+  };
+
+  const cancelRename = () => { setRenamingIdx(null); setRenameValue(''); };
 
   const downloadAttachment = async (ref) => {
     try {
@@ -132,7 +161,6 @@ export function ItemEditor({ item, onClose }) {
       const decryptedBytes = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv: base64Decode(ref.iv) }, docKey, encryptedBytes
       );
-
       if (Capacitor.isNativePlatform()) {
         await Filesystem.writeFile({ path: ref.filename, data: base64Encode(decryptedBytes), directory: Directory.Documents });
         alert(`Saved to Documents: ${ref.filename}`);
@@ -140,9 +168,7 @@ export function ItemEditor({ item, onClose }) {
         const blob = new Blob([decryptedBytes], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = ref.filename;
-        a.click();
+        a.href = url; a.download = ref.filename; a.click();
       }
     } catch (err) {
       setError('Download failed: ' + err.message);
@@ -151,108 +177,105 @@ export function ItemEditor({ item, onClose }) {
 
   if (loading) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        backgroundColor: 'var(--bg-deep)', color: 'var(--text-dim)'
-      }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-deep)', color: 'var(--text-dim)' }}>
         Decrypting...
       </div>
     );
   }
 
+  // ── Shared attachment list renderer (used by both layouts) ──────────────
+  const AttachmentRow = ({ ref: att, idx }) => {
+    const isRenaming = renamingIdx === idx;
+    const isPdf = att.filename.toLowerCase().endsWith('.pdf');
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', padding: IS_ANDROID ? '12px 14px' : '1rem', backgroundColor: IS_ANDROID ? 'var(--bg-surface)' : '#000', borderRadius: '12px', marginBottom: IS_ANDROID ? '8px' : '0.75rem', border: '1px solid var(--border)', gap: '10px' }}>
+        <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>{isPdf ? '📄' : '📎'}</span>
+        {isRenaming ? (
+          <>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={e => setRenameValue(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmRename(idx); if (e.key === 'Escape') cancelRename(); }}
+              style={{ flex: 1, padding: '6px 10px', fontSize: '0.9rem', borderRadius: '8px' }}
+            />
+            <button type="button" onClick={() => confirmRename(idx)} style={{ background: 'rgba(0,229,255,0.15)', border: 'none', color: 'var(--accent)', padding: '6px 10px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.9rem', flexShrink: 0 }}>✓</button>
+            <button type="button" onClick={cancelRename} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', padding: '6px', fontSize: '0.9rem', flexShrink: 0 }}>✕</button>
+          </>
+        ) : (
+          <>
+            <span style={{ flex: 1, fontSize: IS_ANDROID ? '0.9rem' : '1rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {att.filename}
+            </span>
+            <button type="button" onClick={() => startRename(idx)} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', padding: '6px', fontSize: '1rem', flexShrink: 0 }} title="Rename">✏️</button>
+            <button type="button" onClick={() => downloadAttachment(att)} style={{ background: 'rgba(0,229,255,0.1)', border: 'none', color: 'var(--accent)', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.8rem', flexShrink: 0 }}>
+              {IS_ANDROID ? 'Save' : 'Download'}
+            </button>
+            <button type="button" onClick={() => setAttachments(a => a.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--error)', padding: '6px', fontSize: '0.85rem', flexShrink: 0 }}>✕</button>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // ── Pending scan name prompt (shared) ───────────────────────────────────
+  const PendingScanPrompt = () => (
+    <div style={{ border: '1px solid var(--accent)', borderRadius: '12px', padding: IS_ANDROID ? '14px' : '1.25rem', backgroundColor: 'rgba(0,229,255,0.05)', marginBottom: IS_ANDROID ? '10px' : '0.75rem' }}>
+      <div style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: '700', letterSpacing: '0.05em', marginBottom: '10px', textTransform: 'uppercase' }}>
+        📄 Name your scanned document
+      </div>
+      <input
+        ref={pendingNameRef}
+        type="text"
+        value={pendingScanName}
+        onChange={e => setPendingScanName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleConfirmScan(); }}
+        placeholder="document-name.pdf"
+        style={{ width: '100%', padding: '10px 14px', marginBottom: '10px', fontSize: '0.95rem', borderRadius: '10px' }}
+      />
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          type="button"
+          onClick={() => { setPendingScan(null); setPendingScanName(''); }}
+          style={{ flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--bg-deep)', border: '1px solid var(--border)', color: 'var(--text-dim)', fontWeight: '600', fontSize: '0.9rem' }}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirmScan}
+          disabled={uploadingPending}
+          style={{ flex: 2, padding: '10px', borderRadius: '10px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', fontWeight: '800', fontSize: '0.9rem', opacity: uploadingPending ? 0.7 : 1 }}
+        >
+          {uploadingPending ? 'Uploading…' : 'Save to Vault'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Android layout ──────────────────────────────────────────────────────
   if (IS_ANDROID) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', flexDirection: 'column',
-        backgroundColor: 'var(--bg-deep)',
-        paddingTop: 'env(safe-area-inset-top)',
-        paddingBottom: 'env(safe-area-inset-bottom)'
-      }}>
-        {/* Top bar */}
-        <header style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 8px 0 4px',
-          height: '64px',
-          backgroundColor: '#000',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-          gap: '4px'
-        }}>
-          <button
-            type="button"
-            onClick={onClose}
-            className="icon-btn"
-            style={{ color: 'var(--text-dim)', fontSize: '1.4rem' }}
-            aria-label="Go back"
-          >
-            ←
-          </button>
-          <h2 style={{ flex: 1, margin: 0, fontSize: '1.1rem', fontWeight: '800' }}>
-            {isNew ? 'New Entry' : 'Edit Entry'}
-          </h2>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: '8px 18px',
-              borderRadius: '20px',
-              backgroundColor: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              fontWeight: '800',
-              fontSize: '0.9rem',
-              opacity: saving ? 0.7 : 1,
-              marginRight: '8px'
-            }}
-          >
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-deep)', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <header style={{ display: 'flex', alignItems: 'center', padding: '0 8px 0 4px', height: '64px', backgroundColor: '#000', borderBottom: '1px solid var(--border)', flexShrink: 0, gap: '4px' }}>
+          <button type="button" onClick={onClose} className="icon-btn" style={{ color: 'var(--text-dim)', fontSize: '1.4rem' }} aria-label="Go back">←</button>
+          <h2 style={{ flex: 1, margin: 0, fontSize: '1.1rem', fontWeight: '800' }}>{isNew ? 'New Entry' : 'Edit Entry'}</h2>
+          <button type="button" onClick={handleSave} disabled={saving} style={{ padding: '8px 18px', borderRadius: '20px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', fontWeight: '800', fontSize: '0.9rem', opacity: saving ? 0.7 : 1, marginRight: '8px' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </header>
 
-        {/* Scrollable form body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-          {error && (
-            <div style={{
-              color: 'var(--error)',
-              backgroundColor: 'rgba(255,77,77,0.1)',
-              padding: '12px 16px',
-              borderRadius: '10px',
-              marginBottom: '16px',
-              fontSize: '0.9rem'
-            }}>
-              {error}
-            </div>
-          )}
+          {error && <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '12px 16px', borderRadius: '10px', marginBottom: '16px', fontSize: '0.9rem' }}>{error}</div>}
 
-          {/* Title */}
           <div style={{ marginBottom: '16px' }}>
             <label className="field-label">TITLE</label>
-            <input
-              type="text"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              required
-              placeholder="Entry name"
-              style={{ width: '100%', padding: '12px 14px', fontSize: '1rem' }}
-            />
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="Entry name" style={{ width: '100%', padding: '12px 14px', fontSize: '1rem' }} />
           </div>
 
-          {/* Type */}
           <div style={{ marginBottom: '24px' }}>
             <label className="field-label">TYPE</label>
-            <select
-              value={type}
-              onChange={e => setType(e.target.value)}
-              style={{
-                width: '100%', padding: '12px 14px',
-                backgroundColor: '#000', border: '1px solid var(--border)',
-                color: '#fff', borderRadius: '10px', fontSize: '1rem'
-              }}
-            >
+            <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: '12px 14px', backgroundColor: '#000', border: '1px solid var(--border)', color: '#fff', borderRadius: '10px', fontSize: '1rem' }}>
               <option value="entity">Entity (Person / Folder)</option>
               <option value="login">Password</option>
               <option value="document">Document</option>
@@ -261,175 +284,52 @@ export function ItemEditor({ item, onClose }) {
             </select>
           </div>
 
-          {/* Fields */}
-          <div style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-dim)', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Fields
-          </div>
+          <div style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-dim)', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Fields</div>
           {fields.map((f, i) => (
             <div key={i} style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border)', padding: '12px', marginBottom: '10px' }}>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                <input
-                  placeholder="Label"
-                  value={f.label}
-                  onChange={e => updateField(i, 'label', e.target.value)}
-                  style={{ flex: 1, padding: '9px 12px', fontSize: '0.9rem' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => updateField(i, 'sensitive', !f.sensitive)}
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0 12px', fontSize: '1rem' }}
-                >
-                  {f.sensitive ? '👁️' : '🕶️'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeField(i)}
-                  style={{ background: 'none', border: 'none', color: 'var(--error)', padding: '0 8px', fontSize: '1rem' }}
-                >
-                  ✕
-                </button>
+                <input placeholder="Label" value={f.label} onChange={e => updateField(i, 'label', e.target.value)} style={{ flex: 1, padding: '9px 12px', fontSize: '0.9rem' }} />
+                <button type="button" onClick={() => updateField(i, 'sensitive', !f.sensitive)} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0 12px', fontSize: '1rem' }}>{f.sensitive ? '👁️' : '🕶️'}</button>
+                <button type="button" onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: 'var(--error)', padding: '0 8px', fontSize: '1rem' }}>✕</button>
               </div>
-              <input
-                type={f.sensitive ? 'password' : 'text'}
-                placeholder="Value"
-                value={f.value}
-                onChange={e => updateField(i, 'value', e.target.value)}
-                style={{ width: '100%', padding: '9px 12px', fontSize: '0.95rem' }}
-              />
+              <input type={f.sensitive ? 'password' : 'text'} placeholder="Value" value={f.value} onChange={e => updateField(i, 'value', e.target.value)} style={{ width: '100%', padding: '9px 12px', fontSize: '0.95rem' }} />
             </div>
           ))}
-          <button
-            type="button"
-            onClick={addField}
-            style={{ color: 'var(--accent)', background: 'none', border: 'none', padding: '8px 0', fontWeight: '800', fontSize: '0.95rem' }}
-          >
-            + Add Field
-          </button>
+          <button type="button" onClick={addField} style={{ color: 'var(--accent)', background: 'none', border: 'none', padding: '8px 0', fontWeight: '800', fontSize: '0.95rem' }}>+ Add Field</button>
 
-          {/* Attachments */}
-          <div style={{ marginTop: '28px', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-dim)', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            Attachments
-          </div>
-          {attachments.map((ref, i) => (
-            <div key={i} style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '12px 14px',
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: '12px',
-              marginBottom: '8px',
-              border: '1px solid var(--border)',
-              gap: '10px'
-            }}>
-              <span style={{ fontSize: '1.2rem' }}>
-                {ref.filename.endsWith('.pdf') ? '📄' : '📎'}
-              </span>
-              <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {ref.filename}
-              </span>
-              <button
-                type="button"
-                onClick={() => downloadAttachment(ref)}
-                style={{ background: 'rgba(0,229,255,0.1)', border: 'none', color: 'var(--accent)', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.8rem', flexShrink: 0 }}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setAttachments(a => a.filter((_, idx) => idx !== i))}
-                style={{ background: 'none', border: 'none', color: 'var(--error)', padding: '6px', fontSize: '0.85rem', flexShrink: 0 }}
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+          <div style={{ marginTop: '28px', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-dim)', fontWeight: '700', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Attachments</div>
+          {attachments.map((att, i) => <AttachmentRow key={i} ref={att} idx={i} />)}
 
-          {/* Scan button (Android only) */}
-          <button
-            type="button"
-            onClick={handleScanDocument}
-            disabled={scanning}
-            style={{
-              width: '100%',
-              padding: '14px',
-              borderRadius: '12px',
-              border: '1px solid var(--accent)',
-              backgroundColor: 'rgba(0,229,255,0.06)',
-              color: 'var(--accent)',
-              fontWeight: '700',
-              fontSize: '0.95rem',
-              marginTop: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              opacity: scanning ? 0.7 : 1
-            }}
-          >
-            <span>📷</span>
-            {scanning ? 'Opening scanner…' : 'Scan Document'}
-          </button>
+          {pendingScan && <PendingScanPrompt />}
+
+          {!pendingScan && (
+            <button type="button" onClick={handleScanDocument} disabled={scanning} style={{ width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid var(--accent)', backgroundColor: 'rgba(0,229,255,0.06)', color: 'var(--accent)', fontWeight: '700', fontSize: '0.95rem', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: scanning ? 0.7 : 1 }}>
+              <span>📷</span>{scanning ? 'Opening scanner…' : 'Scan Document'}
+            </button>
+          )}
 
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              width: '100%',
-              padding: '14px',
-              border: '1px dashed var(--border)',
-              background: 'rgba(255,255,255,0.02)',
-              color: 'var(--text-dim)',
-              borderRadius: '12px',
-              marginTop: '10px',
-              fontWeight: '600',
-              fontSize: '0.9rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
+          <button type="button" onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '14px', border: '1px dashed var(--border)', background: 'rgba(255,255,255,0.02)', color: 'var(--text-dim)', borderRadius: '12px', marginTop: '10px', fontWeight: '600', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
             <span>📎</span> Upload File
           </button>
 
-          {/* Bottom spacing for safe area */}
           <div style={{ height: '24px' }} />
         </div>
       </div>
     );
   }
 
-  // Desktop / web layout
+  // ── Desktop / web layout ────────────────────────────────────────────────
   return (
-    <div className="glass" style={{
-      position: 'fixed', top: 0, right: 0, bottom: 0, left: 0,
-      zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center',
-      padding: '2rem'
-    }}>
-      <div className="animate-fade" style={{
-        backgroundColor: 'var(--bg-surface)',
-        width: '100%', maxWidth: '700px',
-        maxHeight: '90vh', overflowY: 'auto',
-        borderRadius: '20px', border: '1px solid var(--border)',
-        padding: '2.5rem'
-      }}>
+    <div className="glass" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem' }}>
+      <div className="animate-fade" style={{ backgroundColor: 'var(--bg-surface)', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', borderRadius: '20px', border: '1px solid var(--border)', padding: '2.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '900' }}>{isNew ? 'New Vault Entry' : 'Edit Entry'}</h2>
-          <button
-            onClick={onClose}
-            style={{ background: 'var(--border)', border: 'none', color: '#fff', fontSize: '0.8rem', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            ✕
-          </button>
+          <button onClick={onClose} style={{ background: 'var(--border)', border: 'none', color: '#fff', fontSize: '0.8rem', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
         </div>
 
         <form onSubmit={handleSave}>
-          {error && (
-            <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-              {error}
-            </div>
-          )}
+          {error && <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
             <div>
@@ -460,15 +360,10 @@ export function ItemEditor({ item, onClose }) {
           <button type="button" onClick={addField} style={{ color: 'var(--accent)', background: 'none', border: 'none', padding: '0.5rem 0', fontWeight: '800', fontSize: '0.95rem' }}>+ Add Custom Field</button>
 
           <h3 style={{ fontSize: '1.1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.5rem', marginTop: '3rem', fontWeight: '800' }}>Attachments</h3>
-          {attachments.map((ref, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: '#000', borderRadius: '12px', marginBottom: '0.75rem', border: '1px solid var(--border)' }}>
-              <span style={{ fontWeight: '600' }}>{ref.filename}</span>
-              <div>
-                <button type="button" onClick={() => downloadAttachment(ref)} style={{ background: 'rgba(0, 212, 255, 0.1)', border: 'none', color: 'var(--accent)', marginRight: '0.75rem', padding: '0.5rem 1rem', borderRadius: '8px', fontWeight: 'bold', fontSize: '0.85rem' }}>Download</button>
-                <button type="button" onClick={() => setAttachments(a => a.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: 'var(--error)', padding: '0.5rem', fontSize: '0.85rem' }}>Remove</button>
-              </div>
-            </div>
-          ))}
+          {attachments.map((att, i) => <AttachmentRow key={i} ref={att} idx={i} />)}
+
+          {pendingScan && <PendingScanPrompt />}
+
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
           <button type="button" onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '1.5rem', border: '2px dashed var(--border)', background: 'rgba(255,255,255,0.02)', color: 'var(--text-dim)', borderRadius: '14px', marginTop: '0.5rem', fontWeight: '600' }}>
             Drop or click to upload encrypted file
@@ -476,13 +371,7 @@ export function ItemEditor({ item, onClose }) {
 
           <div style={{ display: 'flex', gap: '1.25rem', marginTop: '4rem' }}>
             <button type="button" onClick={onClose} style={{ flex: 1, padding: '1.1rem', borderRadius: '12px', background: 'var(--bg-deep)', border: '1px solid var(--border)', color: '#fff', fontWeight: '600' }}>Cancel</button>
-            <button type="submit" disabled={saving} style={{
-              flex: 2, padding: '1.1rem', borderRadius: '12px',
-              backgroundColor: 'var(--accent)', color: '#000',
-              border: 'none', fontWeight: '900', fontSize: '1.1rem',
-              boxShadow: '0 10px 30px var(--accent-glow)',
-              opacity: saving ? 0.7 : 1
-            }}>
+            <button type="submit" disabled={saving} style={{ flex: 2, padding: '1.1rem', borderRadius: '12px', backgroundColor: 'var(--accent)', color: '#000', border: 'none', fontWeight: '900', fontSize: '1.1rem', boxShadow: '0 10px 30px var(--accent-glow)', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : 'Save Vault Entry'}
             </button>
           </div>
