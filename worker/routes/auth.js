@@ -61,6 +61,7 @@ auth.post('/login-passkey', async (c) => {
 // All following routes require the Layer 1 JWT
 auth.use('/verify', verifySession);
 auth.use('/change-password', verifySession);
+auth.use('/register-passkey', verifySession);
 
 // POST /api/auth/verify - The "Unlock" authorization (Layer 2)
 auth.post('/verify', passphraseRateLimit, async (c) => {
