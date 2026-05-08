@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useVault } from '../store/vault.jsx';
 import { api } from '../api/client.js';
 import { base64Encode, base64Decode } from '../crypto/util.js';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 
 export function ItemEditor({ item, onClose }) {
   const { addItem, updateItem, getItemFull, mek } = useVault();
@@ -100,12 +102,23 @@ export function ItemEditor({ item, onClose }) {
       const rawDocKeyBytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Decode(ref.keyIv) }, mek, base64Decode(ref.encryptedKeyB64));
       const docKey = await crypto.subtle.importKey("raw", rawDocKeyBytes, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
       const decryptedBytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Decode(ref.iv) }, docKey, encryptedBytes);
-      const blob = new Blob([decryptedBytes], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = ref.filename;
-      a.click();
+      
+      if (Capacitor.isNativePlatform()) {
+        const base64Data = base64Encode(decryptedBytes);
+        const savedFile = await Filesystem.writeFile({
+          path: ref.filename,
+          data: base64Data,
+          directory: Directory.Documents
+        });
+        alert(`File saved to Documents folder: ${ref.filename}`);
+      } else {
+        const blob = new Blob([decryptedBytes], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = ref.filename;
+        a.click();
+      }
     } catch (err) {
       setError('Download failed: ' + err.message);
     }

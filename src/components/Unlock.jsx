@@ -6,6 +6,8 @@ import { derivePassphraseKey } from '../crypto/passphrase.js';
 import { unwrapMEK, generateMEK, wrapMEK } from '../crypto/mek.js';
 import { encryptVaultItem } from '../crypto/vault.js';
 import { serializeCredential } from '../crypto/util.js';
+import { getSecureMEK, isBiometricAvailable } from '../crypto/native-auth.js';
+import { importMEK } from '../crypto/mek.js';
 
 export function Unlock() {
   const [keys, setKeys] = useState([]);
@@ -22,6 +24,30 @@ export function Unlock() {
       api.getKeys().then(setKeys).catch(err => setError(err.message));
     }
   }, [wrappedKeys]);
+
+  // Attempt native biometric unlock on mount
+  useEffect(() => {
+    let mounted = true;
+    const attemptNativeUnlock = async () => {
+      try {
+        if (!(await isBiometricAvailable())) return;
+        const exportedMek = await getSecureMEK();
+        if (exportedMek && mounted) {
+          setLoading(true);
+          const mek = await importMEK(exportedMek);
+          await api.verifyAuth('passphrase'); // Log access
+          await unlockVault(mek);
+        }
+      } catch (err) {
+        console.warn("Native auto-unlock failed:", err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    attemptNativeUnlock();
+    return () => { mounted = false; };
+  }, [unlockVault]);
+
 
   const handlePassphraseUnlock = async (e) => {
     e.preventDefault();

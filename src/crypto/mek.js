@@ -31,3 +31,19 @@ export async function unwrapMEK(wrappedMEKb64, unwrappingKey) {
   );
   // Throws DOMException if wrong key - this is how we detect a bad passphrase
 }
+
+export async function exportMEK(mek) {
+  const raw = await crypto.subtle.exportKey("raw", mek);
+  return base64Encode(raw);
+}
+
+export async function importMEK(mekBase64) {
+  const raw = base64Decode(mekBase64);
+  return crypto.subtle.importKey(
+    "raw",
+    raw,
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
+}

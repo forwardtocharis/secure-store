@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { api } from '../api/client.js';
 import { decryptVaultItem, encryptVaultItem } from '../crypto/vault.js';
+import { exportMEK } from '../crypto/mek.js';
+import { saveSecureMEK, clearSecureMEK } from '../crypto/native-auth.js';
 
 const VaultContext = createContext(null);
 
@@ -62,6 +64,14 @@ export function VaultProvider({ children }) {
     setMek(newMek);
     await loadIndex(newMek);
     resetTimer(); // Start the clock immediately on unlock
+    
+    // Save to native Keystore if available
+    try {
+      const exported = await exportMEK(newMek);
+      await saveSecureMEK(exported);
+    } catch (err) {
+      console.warn("Could not save MEK natively:", err);
+    }
   };
 
   const logout = () => {
@@ -72,6 +82,9 @@ export function VaultProvider({ children }) {
     setMek(null);
     setItems([]);
     if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
+    
+    // Clear from native Keystore
+    clearSecureMEK().catch(e => console.warn(e));
   };
 
   const loadIndex = async (currentMek = mek) => {

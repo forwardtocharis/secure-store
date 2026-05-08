@@ -6,6 +6,10 @@ import { Login } from './components/Login.jsx';
 import { Unlock } from './components/Unlock.jsx';
 import { Vault } from './components/Vault.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
+import { CapacitorPasskey } from '@capgo/capacitor-passkey';
+
+// Automatically shim the browser's navigator.credentials API to route to the native device OS.
+CapacitorPasskey.autoShimWebAuthn();
 
 function App() {
   const { identity, mek, loading, logout } = useVault();
