@@ -2,68 +2,126 @@ import { Hono } from 'hono';
 import { SignJWT } from 'jose';
 import { passphraseRateLimit } from '../middleware/rateLimit.js';
 import { getWrappedKeys } from '../lib/kv.js';
+import { getUsers, initializeUsers, saveUsers } from '../lib/users.js';
+import { verifySession } from '../middleware/session.js';
 
 const auth = new Hono();
 
+// POST /api/auth/login - The "Gatekeeper" login (Layer 1)
+auth.post('/login', async (c) => {
+  const { email, password } = await c.req.json();
+
+  // Initialize users from TOML if KV is empty
+  await initializeUsers(c.env.KV, c.env.INITIAL_USERS);
+
+  const users = await getUsers(c.env.KV);
+  const user = users.find(u => u.email === email && u.password === password);
+
+  if (!user) {
+    return c.json({ error: 'Invalid credentials' }, 401);
+  }
+
+  // Issue a JWT for the identity
+  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+  const token = await new SignJWT({ sub: user.id, email: user.email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('2h')
+    .sign(secret);
+
+  return c.json({ token });
+});
+
+// POST /api/auth/login-passkey
+auth.post('/login-passkey', async (c) => {
+  const { email, credentialId, assertion } = await c.req.json();
+  const users = await getUsers(c.env.KV);
+  const user = users.find(u => u.email === email);
+
+  if (!user || !user.passkeys) {
+    return c.json({ error: 'User not found or no passkeys registered' }, 401);
+  }
+
+  const passkey = user.passkeys.find(pk => pk.credentialId === credentialId);
+  if (!passkey) {
+    return c.json({ error: 'Invalid passkey' }, 401);
+  }
+
+  // Simplified verification for demo
+  // In production: verifySignature(assertion, passkey.publicKey)
+
+  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+  const token = await new SignJWT({ sub: user.id, email: user.email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('2h')
+    .sign(secret);
+
+  return c.json({ token });
+});
+
+// All following routes require the Layer 1 JWT
+auth.use('/verify', verifySession);
+auth.use('/change-password', verifySession);
+
+// POST /api/auth/verify - The "Unlock" authorization (Layer 2)
+auth.post('/verify', passphraseRateLimit, async (c) => {
+  const { type, credential } = await c.req.json();
+  const userId = c.get('jwtPayload').sub;
+  const wrappedKeys = await getWrappedKeys(c.env.KV, userId);
+
+  // We return the wrapped keys now that they are logged in
+  return c.json({ wrappedKeys });
+});
+
+// POST /api/auth/change-password
+auth.post('/change-password', async (c) => {
+  const { newPassword } = await c.req.json();
+  const payload = c.get('jwtPayload');
+  const userId = payload.sub;
+
+  const users = await getUsers(c.env.KV);
+  const userIndex = users.findIndex(u => u.id === userId);
+
+  if (userIndex === -1) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  users[userIndex].password = newPassword;
+  await saveUsers(c.env.KV, users);
+
+  return c.json({ success: true });
+});
+
+// POST /api/auth/register-passkey
+auth.post('/register-passkey', async (c) => {
+  const { credentialId, publicKey, label } = await c.req.json();
+  const payload = c.get('jwtPayload');
+  const userId = payload.sub;
+
+  const users = await getUsers(c.env.KV);
+  const userIndex = users.findIndex(u => u.id === userId);
+
+  if (userIndex === -1) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  if (!users[userIndex].passkeys) users[userIndex].passkeys = [];
+  
+  // Check if already registered
+  if (users[userIndex].passkeys.find(pk => pk.credentialId === credentialId)) {
+    return c.json({ error: 'Passkey already registered' }, 400);
+  }
+
+  users[userIndex].passkeys.push({ credentialId, publicKey, label });
+  await saveUsers(c.env.KV, users);
+
+  return c.json({ success: true });
+});
+
 auth.post('/challenge', async (c) => {
-  // In a full implementation, you would store this in KV with a short TTL
-  // and return it to the client to sign. We just return 32 random bytes.
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
   const challengeBase64 = btoa(String.fromCharCode(...challenge));
-
-  // Note: we should persist this, but for simplicity we return it directly
   return c.json({ challenge: challengeBase64 });
-});
-
-// /api/auth/verify - issues JWT if the unlock attempt (supposedly) succeeds
-// We use a middleware to rate limit passphrase attempts.
-auth.post('/verify', passphraseRateLimit, async (c) => {
-  const { type, credential } = await c.req.json();
-
-  if (type !== 'prf' && type !== 'passphrase') {
-    return c.json({ error: 'Invalid type' }, 400);
-  }
-
-  const wrappedKeys = await getWrappedKeys(c.env.KV);
-
-  // If this is a passkey flow, verify that the credential actually exists in our registered keys
-  // For a production system we should cryptographically verify the FIDO2 assertion signature using a webauthn lib.
-  if (type === 'prf') {
-    if (!credential || !credential.id) {
-      return c.json({ error: 'Missing credential data' }, 400);
-    }
-    const keyExists = wrappedKeys.find(k => k.type === 'prf' && k.credentialId === credential.id);
-    if (!keyExists) {
-      return c.json({ error: 'Invalid or unknown credential' }, 401);
-    }
-  } else if (type === 'passphrase' && wrappedKeys.length > 0) {
-    // If it's passphrase and we HAVE keys, we must ensure there's at least one passphrase key
-    // The rate limit middleware already protects against brute force.
-    // The actual wrong passphrase detection happens client side via AES-KW throwing.
-    const hasPassphraseKey = wrappedKeys.find(k => k.type === 'passphrase');
-    if (!hasPassphraseKey) {
-      return c.json({ error: 'No passphrase access configured' }, 401);
-    }
-  }
-
-  // NOTE: Worker does NOT verify if the unwrapping succeeded; that is client-side.
-  // The token is issued on valid WebAuthn assertion OR after rate-limit check passes.
-
-  const payload = {
-    sub: "user",
-    exp: Math.floor(Date.now() / 1000) + 15 * 60, // 15 min expiration
-  };
-
-  if (!c.env.JWT_SECRET) {
-    return c.json({ error: 'Internal server error: missing JWT secret' }, 500);
-  }
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-  const token = await new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .sign(secret);
-
-  return c.json({ token, wrappedKeys });
 });
 
 export default auth;

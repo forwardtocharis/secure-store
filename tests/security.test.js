@@ -36,22 +36,67 @@ test('auth verify route fails when JWT_SECRET is missing', async () => {
   const c = {
     req: {
       json: async () => ({ type: 'passphrase' }),
+      header: (name) => {
+        if (name === 'Authorization') return 'Bearer dummy-token';
+        return null;
+      }
     },
+    res: { status: 200 },
     env: {
         KV: {
-            get: async () => null
+            get: async () => null,
+            put: async () => {},
+            delete: async () => {}
         }
     },
-    json: (data, status) => ({ status: status || 200, body: data })
+    json: (data, status) => {
+        c.res.status = status || 200;
+        return { status: c.res.status, body: data };
+    }
   };
 
-  const res = await handler(c);
+  let res = await verifySession(c, async () => {
+    return await handler(c, () => {});
+  });
   assert.strictEqual(res.status, 500);
   assert.strictEqual(res.body.error, 'Internal server error: missing JWT secret');
 });
 
-test('verifySession middleware succeeds when JWT_SECRET is present (logic check)', async () => {
-  // We can't actually call jwtVerify without jose, so we just check that it proceeds to call jwtVerify
-  // with the correct secret if JWT_SECRET is present.
-  // Given the environment constraints, we've verified the code change visually and with logic tests.
+test('key isolation: User A cannot see User B\'s keys', async () => {
+  const keysRoute = (await import('../worker/routes/keys.js')).default;
+  const handler = keysRoute.routes.find(r => r.path === '/' && r.method === 'GET').handler;
+
+  const mockKV = {
+    store: {
+      'user:user-a:wrapped-keys': JSON.stringify([{ id: 'key-a' }]),
+      'user:user-b:wrapped-keys': JSON.stringify([{ id: 'key-b' }]),
+    },
+    get: async (key, type) => {
+      const val = mockKV.store[key] || null;
+      if (val && type === 'json') return JSON.parse(val);
+      return val;
+    }
+  };
+
+  // Mock for User A
+  const cA = {
+    get: (key) => ({ sub: 'user-a' }),
+    env: { KV: mockKV },
+    json: (data) => data
+  };
+
+  const resA = await handler(cA);
+  assert.strictEqual(resA[0].id, 'key-a');
+  assert.strictEqual(resA.length, 1);
+
+  // Mock for User B
+  const cB = {
+    get: (key) => ({ sub: 'user-b' }),
+    env: { KV: mockKV },
+    json: (data) => data
+  };
+
+  const resB = await handler(cB);
+  assert.strictEqual(resB[0].id, 'key-b');
+  assert.strictEqual(resB.length, 1);
 });

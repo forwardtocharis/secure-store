@@ -33,10 +33,38 @@ export class VaultAPI {
     return this._fetch('/auth/challenge', { method: 'POST' });
   }
 
+  async login(email, password) {
+    return this._fetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  }
+
+  async loginPasskey(email, credentialId, assertion) {
+    return this._fetch('/auth/login-passkey', {
+      method: 'POST',
+      body: JSON.stringify({ email, credentialId, assertion })
+    });
+  }
+
+  async registerPasskey(credentialId, publicKey, label) {
+    return this._fetch('/auth/register-passkey', {
+      method: 'POST',
+      body: JSON.stringify({ credentialId, publicKey, label })
+    });
+  }
+
   async verifyAuth(type, credential = null) {
     return this._fetch('/auth/verify', {
       method: 'POST',
       body: JSON.stringify({ type, credential })
+    });
+  }
+
+  async changePassword(newPassword) {
+    return this._fetch('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ newPassword })
     });
   }
 
@@ -53,6 +81,13 @@ export class VaultAPI {
 
   async removeKey(id) {
     return this._fetch(`/keys/${id}`, { method: 'DELETE' });
+  }
+
+  async shareKey(shareData) {
+    return this._fetch('/keys/share', {
+      method: 'POST',
+      body: JSON.stringify(shareData)
+    });
   }
 
   async getIndex() {
@@ -81,10 +116,10 @@ export class VaultAPI {
     return this._fetch(`/items/${id}`, { method: 'DELETE' });
   }
 
-  async getUploadUrl(itemId, filename, size) {
+  async getUploadUrl(filename, size) {
     return this._fetch('/files/upload-url', {
       method: 'POST',
-      body: JSON.stringify({ itemId, filename, size })
+      body: JSON.stringify({ filename, size })
     });
   }
 
@@ -100,8 +135,8 @@ export class VaultAPI {
     }
   }
 
-  async downloadFile(itemId, fileId) {
-    const res = await fetch(`${API_BASE}/files/${itemId}/${fileId}`, {
+  async downloadFile(fileId) {
+    const res = await fetch(`${API_BASE}/files/${fileId}`, {
       headers: { ...this.headers }
     });
     if (!res.ok) {

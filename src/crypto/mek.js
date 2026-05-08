@@ -26,7 +26,7 @@ export async function unwrapMEK(wrappedMEKb64, unwrappingKey) {
     unwrappingKey,
     { name: "AES-KW" },
     { name: "AES-GCM", length: 256 },
-    false,
+    true,
     ["encrypt", "decrypt"]
   );
   // Throws DOMException if wrong key - this is how we detect a bad passphrase

@@ -1,44 +1,78 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { api } from '../api/client.js';
 import { decryptVaultItem, encryptVaultItem } from '../crypto/vault.js';
 
 const VaultContext = createContext(null);
 
+const INACTIVITY_LIMIT = 10 * 60 * 1000; // 10 minutes
+
 export function VaultProvider({ children }) {
+  const [identity, setIdentity] = useState(null); // { token, email }
   const [mek, setMek] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  const activityTimeoutRef = useRef(null);
 
-  // Initialize from sessionStorage if possible
+  // Auto-Lock Timer Logic
+  const resetTimer = () => {
+    if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
+    
+    // Only set timer if the vault is unlocked (MEK is present)
+    if (mek) {
+      activityTimeoutRef.current = setTimeout(() => {
+        console.log("Auto-locking vault due to inactivity...");
+        logout();
+      }, INACTIVITY_LIMIT);
+    }
+  };
+
   useEffect(() => {
     const token = sessionStorage.getItem('vault:token');
+    const email = sessionStorage.getItem('vault:email');
     if (token) {
       api.setToken(token);
-      // NOTE: MEK is intentionally not stored in sessionStorage by default
-      // to force re-auth on refresh for higher security, as specified in the doc.
-      // If we wanted refresh persistence, we'd store the MEK too.
+      setIdentity({ token, email });
     }
     setLoading(false);
-  }, []);
 
-  const login = async (newMek, token) => {
+    // Listen for activity
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    events.forEach(name => document.addEventListener(name, resetTimer));
+
+    return () => {
+      events.forEach(name => document.removeEventListener(name, resetTimer));
+      if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
+    };
+  }, [mek]); // Re-run when MEK changes to start/stop the timer
+
+  const loginIdentity = (token, email) => {
     sessionStorage.setItem('vault:token', token);
+    sessionStorage.setItem('vault:email', email);
     api.setToken(token);
+    setIdentity({ token, email });
+  };
+
+  const unlockVault = async (newMek) => {
     setMek(newMek);
     await loadIndex(newMek);
+    resetTimer(); // Start the clock immediately on unlock
   };
 
   const logout = () => {
     sessionStorage.removeItem('vault:token');
+    sessionStorage.removeItem('vault:email');
     api.setToken(null);
+    setIdentity(null);
     setMek(null);
     setItems([]);
+    if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
   };
 
   const loadIndex = async (currentMek = mek) => {
     try {
       const encryptedIndex = await api.getIndex();
-      if (!encryptedIndex.ciphertext) {
+      if (!encryptedIndex || !encryptedIndex.ciphertext) {
         setItems([]);
         return;
       }
@@ -46,11 +80,12 @@ export function VaultProvider({ children }) {
       setItems(decrypted);
     } catch (err) {
       console.error("Failed to load index:", err);
+      // If index fails to decrypt, the MEK might be invalid; lock it.
+      if (err.name === 'OperationError') logout();
     }
   };
 
   const saveIndex = async (newItems) => {
-    // Ensure index only contains metadata (id, name, type, updatedAt)
     const indexData = newItems.map(item => ({
       id: item.id,
       name: item.name,
@@ -70,8 +105,6 @@ export function VaultProvider({ children }) {
   const addItem = async (item) => {
     const encrypted = await encryptVaultItem(mek, item);
     await api.putItem(item.id, encrypted.iv, encrypted.ciphertext);
-
-    // Update index with metadata
     const newItems = [...items, {
       id: item.id,
       name: item.name,
@@ -84,7 +117,6 @@ export function VaultProvider({ children }) {
   const updateItem = async (item) => {
     const encrypted = await encryptVaultItem(mek, item);
     await api.putItem(item.id, encrypted.iv, encrypted.ciphertext);
-
     const newItems = items.map(i => i.id === item.id ? {
       id: item.id,
       name: item.name,
@@ -102,7 +134,7 @@ export function VaultProvider({ children }) {
 
   return (
     <VaultContext.Provider value={{
-      mek, items, login, logout, loading, addItem, updateItem, deleteItem, refresh: loadIndex, getItemFull
+      identity, mek, items, loginIdentity, unlockVault, logout, loading, addItem, updateItem, deleteItem, refresh: loadIndex, getItemFull
     }}>
       {children}
     </VaultContext.Provider>

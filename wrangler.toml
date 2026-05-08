@@ -12,7 +12,8 @@ binding = "R2"
 bucket_name = "vault-files"
 
 [vars]
-JWT_SECRET = ""
+JWT_SECRET = "super-secret-vault-key-123"
+INITIAL_USERS = '[{"email":"admin", "password":"password123"}]'
 
 [site]
 bucket = "./dist"

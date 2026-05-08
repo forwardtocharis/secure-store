@@ -8,21 +8,19 @@ export function ItemEditor({ item, onClose }) {
 
   const isNew = !item;
   const [loading, setLoading] = useState(!isNew);
-  const [fullItem, setFullItem] = useState(null);
-
   const [itemId] = useState(() => item?.id || crypto.randomUUID());
   const [name, setName] = useState(item?.name || '');
   const [type, setType] = useState(item?.type || 'login');
   const [fields, setFields] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!isNew) {
       getItemFull(item.id).then(data => {
-        setFullItem(data);
         setName(data.name || '');
         setType(data.type || 'login');
         setFields(data.fields || []);
@@ -35,6 +33,7 @@ export function ItemEditor({ item, onClose }) {
   const handleSave = async (e) => {
     e.preventDefault();
     setError('');
+    setSaving(true);
     try {
       const payload = {
         id: itemId,
@@ -53,220 +52,144 @@ export function ItemEditor({ item, onClose }) {
       onClose();
     } catch (err) {
       setError('Save failed: ' + err.message);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const addField = () => {
-    setFields([...fields, { label: '', value: '', sensitive: false }]);
-  };
-
+  const addField = () => setFields([...fields, { label: '', value: '', sensitive: false }]);
   const updateField = (index, key, value) => {
     const newFields = [...fields];
     newFields[index][key] = value;
     setFields(newFields);
   };
-
-  const removeField = (index) => {
-    setFields(fields.filter((_, i) => i !== index));
-  };
-
-  // --- Attachments Logic ---
+  const removeField = (index) => setFields(fields.filter((_, i) => i !== index));
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    setError('');
+    const MAX_SIZE = 20 * 1024 * 1024; // 20MB
+    if (file.size > MAX_SIZE) {
+      setError('File too large. Maximum size is 20MB.');
+      return;
+    }
+
     try {
       const buffer = await file.arrayBuffer();
       const fileBytes = new Uint8Array(buffer);
-
-      // 1. Generate document specific AES-GCM key
-      const docKey = await crypto.subtle.generateKey(
-        { name: "AES-GCM", length: 256 },
-        true,
-        ["encrypt", "decrypt"]
-      );
-
-      // 2. Encrypt the file payload
+      const docKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
       const iv = crypto.getRandomValues(new Uint8Array(12));
-      const ciphertext = await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv },
-        docKey,
-        fileBytes
-      );
-
-      // 3. Wrap the document key with the MEK using AES-GCM
+      const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, docKey, fileBytes);
       const rawDocKey = await crypto.subtle.exportKey("raw", docKey);
       const docKeyIv = crypto.getRandomValues(new Uint8Array(12));
-      const encryptedDocKey = await crypto.subtle.encrypt(
-        { name: "AES-GCM", iv: docKeyIv },
-        mek,
-        rawDocKey
-      );
-
-      // 4. Request upload URL
-      const { uploadUrl, fileId } = await api.getUploadUrl(itemId, file.name, file.size);
-
-      // 5. Upload the encrypted blob
+      const encryptedDocKey = await crypto.subtle.encrypt({ name: "AES-GCM", iv: docKeyIv }, mek, rawDocKey);
+      const { uploadUrl, fileId } = await api.getUploadUrl(file.name, file.size);
       await api.uploadFile(uploadUrl, ciphertext);
-
-      // 6. Save the attachment ref
-      const newRef = {
-        fileId,
-        filename: file.name,
-        encryptedKeyB64: base64Encode(encryptedDocKey),
-        keyIv: base64Encode(docKeyIv),
-        iv: base64Encode(iv)
-      };
-
-      setAttachments([...attachments, newRef]);
-
+      setAttachments([...attachments, {
+        fileId, filename: file.name, encryptedKeyB64: base64Encode(encryptedDocKey), keyIv: base64Encode(docKeyIv), iv: base64Encode(iv)
+      }]);
     } catch (err) {
       setError('Upload failed: ' + err.message);
     }
   };
 
   const downloadAttachment = async (ref) => {
-    setError('');
     try {
-      if (!itemId) throw new Error("Save item first before downloading");
-
-      // 1. Download encrypted blob
-      const encryptedBytes = await api.downloadFile(itemId, ref.fileId);
-
-      // 2. Decrypt the document key using MEK
-      const rawDocKeyBytes = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64Decode(ref.keyIv) },
-        mek,
-        base64Decode(ref.encryptedKeyB64)
-      );
-
-      const docKey = await crypto.subtle.importKey(
-        "raw", rawDocKeyBytes,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["decrypt"]
-      );
-
-      // 3. Decrypt the file
-      const decryptedBytes = await crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64Decode(ref.iv) },
-        docKey,
-        encryptedBytes
-      );
-
-      // 4. Trigger download in browser
+      const encryptedBytes = await api.downloadFile(ref.fileId);
+      const rawDocKeyBytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Decode(ref.keyIv) }, mek, base64Decode(ref.encryptedKeyB64));
+      const docKey = await crypto.subtle.importKey("raw", rawDocKeyBytes, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+      const decryptedBytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64Decode(ref.iv) }, docKey, encryptedBytes);
       const blob = new Blob([decryptedBytes], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = ref.filename;
       a.click();
-      URL.revokeObjectURL(url);
-
     } catch (err) {
       setError('Download failed: ' + err.message);
     }
   };
 
-  const removeAttachment = (index) => {
-    setAttachments(attachments.filter((_, i) => i !== index));
-  };
-
-  if (loading) return <div>Loading item...</div>;
+  if (loading) return <div style={{ color: '#fff', textAlign: 'center', padding: '5rem' }}>Loading decrypting...</div>;
 
   return (
-    <div style={{ maxWidth: 600, margin: '2rem auto', padding: '1rem', border: '1px solid #ccc' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>{isNew ? 'New Item' : 'Edit Item'}</h2>
-        <button onClick={onClose}>Back</button>
+    <div className="glass" style={{ 
+      position: 'fixed', top: 0, right: 0, bottom: 0, left: 0, 
+      zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center',
+      padding: '2rem'
+    }}>
+      <div className="animate-fade" style={{ 
+        backgroundColor: 'var(--bg-surface)', 
+        width: '100%', maxWidth: '700px', 
+        maxHeight: '90vh', overflowY: 'auto',
+        borderRadius: '20px', border: '1px solid var(--border)',
+        padding: '2.5rem'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <h2 style={{ margin: 0 }}>{isNew ? 'New Entry' : 'Edit Entry'}</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.5rem' }}>✕</button>
+        </div>
+
+        <form onSubmit={handleSave}>
+          {error && <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>TITLE</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.5rem' }}>TYPE</label>
+              <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%' }}>
+                <option value="entity">Entity (Person/Folder)</option>
+                <option value="login">Password</option>
+                <option value="document">Document</option>
+                <option value="identity">Identity</option>
+                <option value="note">Secure Note</option>
+              </select>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Fields</h3>
+          {fields.map((f, i) => (
+            <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <input placeholder="Label" value={f.label} onChange={e => updateField(i, 'label', e.target.value)} style={{ flex: 1 }} />
+              <input type={f.sensitive ? 'password' : 'text'} placeholder="Value" value={f.value} onChange={e => updateField(i, 'value', e.target.value)} style={{ flex: 2 }} />
+              <button type="button" onClick={() => updateField(i, 'sensitive', !f.sensitive)} style={{ background: 'none', border: 'none' }}>{f.sensitive ? '👁️' : '🕶️'}</button>
+              <button type="button" onClick={() => removeField(i)} style={{ background: 'none', border: 'none', color: 'var(--error)' }}>✕</button>
+            </div>
+          ))}
+          <button type="button" onClick={addField} style={{ color: 'var(--accent)', background: 'none', border: 'none', padding: '0.5rem 0', fontWeight: 'bold' }}>+ Add Field</button>
+
+          <h3 style={{ fontSize: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem', marginTop: '2rem' }}>Attachments</h3>
+          {attachments.map((ref, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', backgroundColor: '#000', borderRadius: '8px', marginBottom: '0.5rem' }}>
+              <span>{ref.filename}</span>
+              <div>
+                <button type="button" onClick={() => downloadAttachment(ref)} style={{ background: 'none', border: 'none', color: 'var(--accent)', marginRight: '1rem' }}>Download</button>
+                <button type="button" onClick={() => setAttachments(attachments.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: 'var(--error)' }}>Remove</button>
+              </div>
+            </div>
+          ))}
+          <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
+          <button type="button" onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: '1rem', border: '1px dashed var(--border)', background: 'none', color: 'var(--text-dim)', borderRadius: '12px', marginTop: '0.5rem' }}>
+            Drop or click to upload encrypted file
+          </button>
+
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '3rem' }}>
+            <button type="button" onClick={onClose} style={{ flex: 1, padding: '1rem', borderRadius: '10px', background: 'none', border: '1px solid var(--border)', color: '#fff' }}>Cancel</button>
+            <button type="submit" disabled={saving} style={{ 
+              flex: 2, padding: '1rem', borderRadius: '10px', 
+              backgroundColor: 'var(--accent)', color: '#000', 
+              border: 'none', fontWeight: 'bold',
+              opacity: saving ? 0.7 : 1
+            }}>
+              {saving ? 'Saving...' : 'Save Entry'}
+            </button>
+          </div>
+        </form>
       </div>
-
-      <form onSubmit={handleSave}>
-        {error && (
-          <div style={{ color: 'red', marginBottom: '1rem', border: '1px solid red', padding: '0.5rem', borderRadius: '4px' }}>
-            {error}
-          </div>
-        )}
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block' }}>Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            required
-            style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block' }}>Type</label>
-          <select
-            value={type}
-            onChange={e => setType(e.target.value)}
-            style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
-          >
-            <option value="login">Login / Password</option>
-            <option value="document">Document / Attachment</option>
-            <option value="identity">Identity / SSN</option>
-            <option value="note">Secure Note</option>
-          </select>
-        </div>
-
-        <h3>Fields</h3>
-        {fields.map((f, i) => (
-          <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
-            <input
-              type="text"
-              placeholder="Label (e.g. SSN)"
-              value={f.label}
-              onChange={e => updateField(i, 'label', e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <input
-              type={f.sensitive ? 'password' : 'text'}
-              placeholder="Value"
-              value={f.value}
-              onChange={e => updateField(i, 'value', e.target.value)}
-              style={{ flex: 2 }}
-            />
-            <label>
-              <input
-                type="checkbox"
-                checked={f.sensitive}
-                onChange={e => updateField(i, 'sensitive', e.target.checked)}
-              /> Sensitive
-            </label>
-            <button type="button" onClick={() => removeField(i)}>X</button>
-          </div>
-        ))}
-        <button type="button" onClick={addField} style={{ marginBottom: '1rem' }}>+ Add Field</button>
-
-        <hr />
-
-        <h3>Attachments</h3>
-        {attachments.map((ref, i) => (
-          <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
-            <span style={{ flex: 1 }}>{ref.filename}</span>
-            <button type="button" onClick={() => downloadAttachment(ref)}>Download</button>
-            <button type="button" onClick={() => removeAttachment(i)} style={{ color: 'red' }}>Remove</button>
-          </div>
-        ))}
-        <input
-          type="file"
-          ref={fileInputRef}
-          style={{ display: 'none' }}
-          onChange={handleFileUpload}
-        />
-        <button type="button" onClick={() => fileInputRef.current?.click()} style={{ marginBottom: '1rem' }}>
-          Upload File
-        </button>
-
-        <div style={{ marginTop: '2rem' }}>
-          <button type="submit" style={{ width: '100%', padding: '0.5rem', fontWeight: 'bold' }}>Save Item</button>
-        </div>
-      </form>
     </div>
   );
 }

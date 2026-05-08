@@ -11,11 +11,52 @@ export function Settings({ onBack }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  // Passphrase form
   const [newPassphrase, setNewPassphrase] = useState('');
-
-  // Passkey form
   const [passkeyLabel, setPasskeyLabel] = useState('');
+  const [newAccountPassword, setNewAccountPassword] = useState('');
+  
+  // Sharing
+  const [shareEmail, setShareEmail] = useState('');
+  const [sharePassphrase, setSharePassphrase] = useState('');
+
+  // Recovery Key
+  const [recoveryKey, setRecoveryKey] = useState('');
+
+  const handleGenerateRecoveryKey = async () => {
+    try {
+      setError('');
+      setMessage('');
+      
+      // 1. Generate 256-bit random recovery key
+      const rawKey = crypto.getRandomValues(new Uint8Array(32));
+      const hexKey = Array.from(rawKey).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      
+      // 2. Import as AES-KW key
+      const unwrappingKey = await crypto.subtle.importKey(
+        "raw", rawKey,
+        { name: "AES-KW" },
+        false,
+        ["wrapKey", "unwrapKey"]
+      );
+
+      // 3. Wrap MEK
+      const wrappedMEK = await wrapMEK(mek, unwrappingKey);
+
+      // 4. Save to server
+      await api.addKey({
+        type: 'recovery',
+        label: 'Emergency Recovery Key',
+        wrappedMEK,
+        iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
+      });
+
+      setRecoveryKey(hexKey);
+      setMessage('Recovery Key generated. COPY THIS NOW!');
+      await loadKeys();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   const loadKeys = async () => {
     try {
@@ -37,18 +78,23 @@ export function Settings({ onBack }) {
       setMessage('');
       const label = passkeyLabel || 'New Passkey Device';
       const { credential, unwrappingKey } = await enrollPasskey(label);
-
       const wrappedMEK = await wrapMEK(mek, unwrappingKey);
-
+      
+      const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+      
+      // Layer 2: Vault Key
       await api.addKey({
         type: 'prf',
-        credentialId: btoa(String.fromCharCode(...new Uint8Array(credential.rawId))),
+        credentialId,
         label,
         wrappedMEK,
         iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
       });
 
-      setMessage('Passkey enrolled successfully');
+      // Layer 1: Identity Key
+      await api.registerPasskey(credentialId, 'MOCKED_PUBLIC_KEY', label);
+
+      setMessage('Passkey enrolled for both Login and Vault Unlock!');
       setPasskeyLabel('');
       await loadKeys();
     } catch (err) {
@@ -61,10 +107,8 @@ export function Settings({ onBack }) {
     try {
       setError('');
       setMessage('');
-
       const { unwrappingKey, salt } = await derivePassphraseKey(newPassphrase);
       const wrappedMEK = await wrapMEK(mek, unwrappingKey);
-
       await api.addKey({
         type: 'passphrase',
         label: 'Additional Passphrase',
@@ -72,7 +116,6 @@ export function Settings({ onBack }) {
         iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))),
         salt
       });
-
       setMessage('Passphrase added successfully');
       setNewPassphrase('');
       await loadKeys();
@@ -81,71 +124,152 @@ export function Settings({ onBack }) {
     }
   };
 
-  const handleRevokeKey = async (id) => {
+  const handleChangeAccountPassword = async (e) => {
+    e.preventDefault();
     try {
       setError('');
       setMessage('');
-      await api.removeKey(id);
-      setMessage('Key revoked');
-      await loadKeys();
+      await api.changePassword(newAccountPassword);
+      setMessage('Account password updated successfully');
+      setNewAccountPassword('');
     } catch (err) {
       setError(err.message);
     }
   };
 
+  const handleShareVault = async (e) => {
+    e.preventDefault();
+    try {
+      setError('');
+      setMessage('');
+      
+      // 1. Derive wrapping key for the target family member
+      const { unwrappingKey, salt } = await derivePassphraseKey(sharePassphrase);
+      
+      // 2. Wrap the SHARED MEK with their key
+      const wrappedMEK = await wrapMEK(mek, unwrappingKey);
+      
+      // 3. Send to server
+      await api.shareKey({
+        targetEmail: shareEmail,
+        type: 'passphrase',
+        label: `Shared by ${api.token ? 'Family Member' : 'Owner'}`,
+        wrappedMEK,
+        iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))),
+        salt
+      });
+      
+      setMessage(`Vault access shared with ${shareEmail}. They can now log in and unlock using the passphrase you provided.`);
+      setShareEmail('');
+      setSharePassphrase('');
+    } catch (err) {
+      setError('Sharing failed: ' + err.message);
+    }
+  };
+
   return (
-    <div style={{ maxWidth: 600, margin: '2rem auto', padding: '1rem', border: '1px solid #ccc' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h2>Settings & Access</h2>
-        <button onClick={onBack}>Back to Vault</button>
-      </div>
+    <div style={{ backgroundColor: 'var(--bg-deep)', minHeight: '100vh', padding: '3rem' }}>
+      <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '2rem' }}>Settings & Access</h2>
+            <p style={{ color: 'var(--text-dim)', margin: '0.5rem 0 0' }}>Manage how you access your encrypted data.</p>
+          </div>
+          <button onClick={onBack} style={{ 
+            padding: '0.6rem 1.2rem', borderRadius: '8px', 
+            background: 'none', border: '1px solid var(--border)', color: '#fff' 
+          }}>
+            ← Back to Vault
+          </button>
+        </header>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-      {message && <p style={{ color: 'green' }}>{message}</p>}
+        {error && <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
+        {message && <div style={{ color: 'var(--success)', backgroundColor: 'rgba(0,255,136,0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{message}</div>}
 
-      <h3>Current Access Keys</h3>
-      <ul style={{ listStyle: 'none', padding: 0 }}>
-        {keys.map(k => (
-          <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid #eee' }}>
-            <div>
-              <strong>{k.label}</strong> <span style={{ fontSize: '0.8em', color: '#666' }}>({k.type})</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+          {/* Access Keys Section */}
+          <section style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '2rem' }}>
+            <h3 style={{ marginTop: 0 }}>Active Access Keys</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginBottom: '1.5rem' }}>Devices and passphrases that can unlock this vault.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {keys.map(k => (
+                <div key={k.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: '#000', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{k.label}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{k.type.toUpperCase()}</div>
+                  </div>
+                  {keys.length > 1 && (
+                    <button onClick={async () => { if(confirm('Revoke this key?')) { await api.removeKey(k.id); loadKeys(); } }} style={{ background: 'none', border: 'none', color: 'var(--error)' }}>Revoke</button>
+                  )}
+                </div>
+              ))}
             </div>
-            {keys.length > 1 && (
-              <button onClick={() => handleRevokeKey(k.id)} style={{ color: 'red' }}>Revoke</button>
-            )}
-          </li>
-        ))}
-      </ul>
+          </section>
 
-      <hr style={{ margin: '2rem 0' }} />
+          {/* Add Section */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+             <section style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '2rem' }}>
+                <h3 style={{ marginTop: 0 }}>Enroll Passkey</h3>
+                <form onSubmit={handleAddPasskey} style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="text" placeholder="Device Label" value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} required style={{ flex: 1 }} />
+                  <button type="submit" style={{ backgroundColor: 'var(--accent)', color: '#000', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', fontWeight: 'bold' }}>Add</button>
+                </form>
+             </section>
 
-      <h3>Add New Device (Passkey)</h3>
-      <p style={{ fontSize: '0.9em' }}>Enrolls the current device using WebAuthn/biometrics.</p>
-      <form onSubmit={handleAddPasskey} style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
-        <input
-          type="text"
-          placeholder="Device Label (e.g. My Phone)"
-          value={passkeyLabel}
-          onChange={e => setPasskeyLabel(e.target.value)}
-          required
-          style={{ flex: 1, padding: '0.5rem' }}
-        />
-        <button type="submit" style={{ padding: '0.5rem' }}>Enroll Device</button>
-      </form>
+             <section style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '2rem' }}>
+                <h3 style={{ marginTop: 0 }}>New Master Passphrase</h3>
+                <form onSubmit={handleAddPassphrase} style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="password" placeholder="Passphrase" value={newPassphrase} onChange={e => setNewPassphrase(e.target.value)} required style={{ flex: 1 }} />
+                  <button type="submit" style={{ backgroundColor: 'var(--accent)', color: '#000', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', fontWeight: 'bold' }}>Add</button>
+                </form>
+             </section>
 
-      <h3>Add Shared Passphrase</h3>
-      <p style={{ fontSize: '0.9em' }}>Add another passphrase to allow another user (or yourself on another browser) to unlock the vault.</p>
-      <form onSubmit={handleAddPassphrase} style={{ display: 'flex', gap: '0.5rem' }}>
-        <input
-          type="password"
-          placeholder="New Passphrase"
-          value={newPassphrase}
-          onChange={e => setNewPassphrase(e.target.value)}
-          required
-          style={{ flex: 1, padding: '0.5rem' }}
-        />
-        <button type="submit" style={{ padding: '0.5rem' }}>Add Passphrase</button>
-      </form>
+             <section style={{ backgroundColor: 'rgba(0, 255, 136, 0.05)', border: '1px solid var(--accent)', borderRadius: '16px', padding: '2rem' }}>
+                <h3 style={{ marginTop: 0, color: 'var(--accent)' }}>Share with Family Member</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '1rem' }}>Wrap the shared Master Key for another user. They must already have an account.</p>
+                <form onSubmit={handleShareVault} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <input type="email" placeholder="Family Member Email" value={shareEmail} onChange={e => setShareEmail(e.target.value)} required />
+                  <input type="password" placeholder="Their Temporary Passphrase" value={sharePassphrase} onChange={e => setSharePassphrase(e.target.value)} required />
+                  <button type="submit" style={{ backgroundColor: 'var(--accent)', color: '#000', border: 'none', padding: '0.75rem', borderRadius: '8px', fontWeight: 'bold' }}>Authorize Access</button>
+                </form>
+             </section>
+          </div>
+        </div>
+
+        <section style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '2rem', marginTop: '2rem' }}>
+          <h3 style={{ marginTop: 0 }}>Change Account Password (Layer 1)</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginBottom: '1.5rem' }}>Updates your login password. This does not affect the encryption of your data.</p>
+          <form onSubmit={handleChangeAccountPassword} style={{ display: 'flex', gap: '1rem' }}>
+            <input type="password" placeholder="New Account Password" value={newAccountPassword} onChange={e => setNewAccountPassword(e.target.value)} required style={{ flex: 1 }} />
+            <button type="submit" style={{ backgroundColor: 'var(--bg-deep)', color: '#fff', border: '1px solid var(--border)', padding: '0.75rem 1.5rem', borderRadius: '8px', fontWeight: 'bold' }}>Update Login Password</button>
+          </form>
+        </section>
+
+        <section style={{ backgroundColor: 'rgba(255, 200, 0, 0.05)', border: '1px dashed #ffc800', borderRadius: '16px', padding: '2rem', marginTop: '2rem' }}>
+          <h3 style={{ marginTop: 0, color: '#ffc800' }}>⚠️ Emergency Recovery</h3>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginBottom: '1.5rem' }}>
+            If you forget your vault passphrase and don't have a passkey device, this key is the <strong>only way</strong> to recover your data.
+          </p>
+          
+          {recoveryKey ? (
+            <div style={{ backgroundColor: '#000', padding: '1.5rem', borderRadius: '8px', border: '1px solid #ffc800', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.75rem', color: '#ffc800', marginBottom: '0.5rem' }}>YOUR RECOVERY KEY (SAVE THIS OFFLINE)</div>
+              <code style={{ fontSize: '1.1rem', color: '#fff', wordBreak: 'break-all', letterSpacing: '0.1em' }}>{recoveryKey}</code>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginTop: '1rem' }}>This key will not be shown again.</p>
+            </div>
+          ) : (
+            <button 
+              onClick={handleGenerateRecoveryKey}
+              style={{ 
+                backgroundColor: 'transparent', color: '#ffc800', border: '1px solid #ffc800', 
+                padding: '0.75rem 1.5rem', borderRadius: '8px', fontWeight: 'bold' 
+              }}
+            >
+              Generate Recovery Key
+            </button>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
