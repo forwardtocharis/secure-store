@@ -121,16 +121,22 @@ export function Unlock() {
     setLoading(true);
     setError('');
     try {
-      const prfKey = keys.find(k => k.type === 'prf');
-      if (!prfKey) throw new Error('No passkey enrolled.');
-
+      // Use null to allow any resident passkey (matches Login.jsx behavior)
       const { assertion, unwrappingKey } = await authenticatePasskey(
-        prfKey.credentialId,
+        null,
         async () => {
           const res = await api.getChallenge();
           return Uint8Array.from(atob(res.challenge), c => c.charCodeAt(0));
         }
       );
+
+      // Identify which PRF key was used
+      const credentialId = btoa(String.fromCharCode(...new Uint8Array(assertion.rawId)));
+      const prfKey = keys.find(k => k.type === 'prf' && k.credentialId === credentialId);
+      
+      if (!prfKey) {
+        throw new Error('This passkey is not enrolled for vault unlocking. Please use the device you registered with.');
+      }
 
       const serializedAssertion = serializeCredential(assertion);
       const mek = await unwrapMEK(prfKey.wrappedMEK, unwrappingKey);
