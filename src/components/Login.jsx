@@ -52,104 +52,122 @@ export function Login() {
 
   return (
     <div style={{
-      maxWidth: 400,
-      margin: '10vh auto',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
       padding: '2rem',
-      backgroundColor: '#1a1a1a',
-      borderRadius: '12px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-      color: '#fff',
-      fontFamily: 'system-ui, sans-serif'
+      backgroundColor: 'var(--bg-deep)'
     }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '2rem', color: '#00d4ff' }}>SecureStore</h1>
-      <p style={{ textAlign: 'center', color: '#888', marginBottom: '2rem' }}>Please log in to access your vault.</p>
-      
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Email / Username</label>
-          <input
-            type="text"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="admin"
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              borderRadius: '6px',
-              border: '1px solid #333',
-              backgroundColor: '#0a0a0a',
-              color: '#fff',
-              boxSizing: 'border-box'
-            }}
-          />
+      <div className="animate-fade card" style={{
+        width: '100%',
+        maxWidth: 420,
+        textAlign: 'center'
+      }}>
+        <div style={{ 
+          fontSize: '4rem', marginBottom: '2rem', 
+          display: 'inline-block', padding: '1.5rem', 
+          borderRadius: '50%', backgroundColor: 'rgba(0, 212, 255, 0.05)',
+          boxShadow: '0 0 50px var(--accent-glow)',
+          border: '1px solid var(--accent)'
+        }}>
+          🛡️
         </div>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              borderRadius: '6px',
-              border: '1px solid #333',
-              backgroundColor: '#0a0a0a',
-              color: '#fff',
-              boxSizing: 'border-box'
-            }}
-          />
-        </div>
+        <h1 style={{ margin: '0 0 0.75rem', color: 'var(--accent)', fontSize: '2.5rem', fontWeight: '900' }}>SecureStore</h1>
+        <p style={{ color: 'var(--text-dim)', marginBottom: '3rem', fontSize: '1.1rem' }}>Please log in to access your vault.</p>
         
-        {error && (
-          <div style={{ color: '#ff4d4d', marginBottom: '1rem', fontSize: '0.85rem', textAlign: 'center' }}>
-            {error}
+        <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>EMAIL / USERNAME</label>
+            <input
+              type="text"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="admin"
+              required
+              style={{
+                width: '100%',
+                padding: '1.25rem',
+                fontSize: '1.1rem'
+              }}
+            />
           </div>
-        )}
+          <div style={{ marginBottom: '2.5rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>PASSWORD</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              style={{
+                width: '100%',
+                padding: '1.25rem',
+                fontSize: '1.1rem'
+              }}
+            />
+          </div>
+          
+          {error && (
+            <div style={{ 
+              color: 'var(--error)', 
+              backgroundColor: 'rgba(255,77,77,0.1)', 
+              padding: '1rem', 
+              borderRadius: '10px', 
+              marginBottom: '1.5rem', 
+              fontSize: '0.95rem', 
+              textAlign: 'center',
+              border: '1px solid rgba(255,77,77,0.2)'
+            }}>
+              {error}
+            </div>
+          )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            borderRadius: '6px',
-            border: 'none',
-            backgroundColor: '#00d4ff',
-            color: '#000',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            opacity: loading ? 0.7 : 1,
-            transition: 'all 0.2s',
-            marginBottom: '1rem'
-          }}
-        >
-          {loading ? 'Logging in...' : 'Sign In'}
-        </button>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '1.25rem',
+              borderRadius: '12px',
+              border: 'none',
+              backgroundColor: 'var(--accent)',
+              color: '#000',
+              fontWeight: '900',
+              fontSize: '1.1rem',
+              cursor: 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s',
+              marginBottom: '1rem',
+              boxShadow: '0 10px 30px var(--accent-glow)'
+            }}
+          >
+            {loading ? 'Signing in...' : 'Sign In'}
+          </button>
 
-        <button
-          type="button"
-          onClick={handlePasskeyLogin}
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            borderRadius: '6px',
-            border: '1px solid #333',
-            backgroundColor: 'transparent',
-            color: '#00d4ff',
-            fontWeight: 'bold',
-            cursor: 'pointer',
-            opacity: loading ? 0.7 : 1,
-            transition: 'all 0.2s'
-          }}
-        >
-          Sign in with Passkey
-        </button>
-      </form>
+          <button
+            type="button"
+            onClick={handlePasskeyLogin}
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '1.25rem',
+              borderRadius: '12px',
+              border: '1px solid var(--border)',
+              backgroundColor: 'transparent',
+              color: 'var(--accent)',
+              fontWeight: '800',
+              fontSize: '1rem',
+              cursor: 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s'
+            }}
+          >
+            Sign in with Passkey
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

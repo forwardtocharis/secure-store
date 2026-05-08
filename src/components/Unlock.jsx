@@ -143,18 +143,21 @@ export function Unlock() {
         minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', 
         backgroundColor: 'var(--bg-deep)', padding: '2rem' 
       }}>
-        <div className="animate-fade" style={{ width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+        <div className="animate-fade card" style={{ width: '100%', maxWidth: '420px', textAlign: 'center' }}>
           <div style={{ 
-            fontSize: '4rem', marginBottom: '1.5rem', 
+            fontSize: '4rem', marginBottom: '2rem', 
             display: 'inline-block', padding: '1.5rem', 
-            borderRadius: '50%', backgroundColor: 'rgba(0, 212, 255, 0.1)',
-            boxShadow: '0 0 40px var(--accent-glow)',
+            borderRadius: '50%', backgroundColor: 'rgba(0, 212, 255, 0.05)',
+            boxShadow: '0 0 50px var(--accent-glow)',
             border: '1px solid var(--accent)'
           }}>
             🆕
           </div>
-          <h1 style={{ marginBottom: '0.5rem' }}>Initialize Your Vault</h1>
-          <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem' }}>Set a master passphrase to secure your vault. This cannot be recovered if lost!</p>
+          <h1 style={{ marginBottom: '0.75rem', fontSize: '2rem' }}>Initialize Your Vault</h1>
+          <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem', fontSize: '1.05rem' }}>
+            Set a master passphrase to secure your vault. <br/>
+            <strong style={{ color: 'var(--accent)' }}>This cannot be recovered if lost!</strong>
+          </p>
           
           <form onSubmit={handleInitializeVault}>
             <input 
@@ -163,53 +166,52 @@ export function Unlock() {
               value={passphrase} 
               onChange={e => setPassphrase(e.target.value)}
               required
-              style={{ width: '100%', padding: '1rem', marginBottom: '1.5rem', fontSize: '1.1rem', textAlign: 'center' }}
+              style={{ width: '100%', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '1.1rem', textAlign: 'center' }}
             />
             <button 
               type="submit" 
               disabled={loading}
               style={{ 
-                width: '100%', padding: '1rem', borderRadius: '10px', 
+                width: '100%', padding: '1.25rem', borderRadius: '12px', 
                 backgroundColor: 'var(--accent)', color: '#000', border: 'none', 
-                fontWeight: 'bold', fontSize: '1rem', opacity: loading ? 0.7 : 1
+                fontWeight: '800', fontSize: '1.1rem', opacity: loading ? 0.7 : 1
               }}
             >
-              {loading ? 'Initializing...' : 'Create Vault'}
+              {loading ? 'Initializing...' : 'Create Secure Vault'}
             </button>
           </form>
-          {error && <p style={{ color: 'var(--error)', marginTop: '1.5rem', fontSize: '0.9rem' }}>{error}</p>}
+          {error && <p style={{ color: 'var(--error)', marginTop: '1.5rem', fontSize: '0.95rem', backgroundColor: 'rgba(255,77,77,0.1)', padding: '0.75rem', borderRadius: '8px' }}>{error}</p>}
         </div>
       </div>
     );
-  }
 
   return (
     <div style={{ 
       minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center', 
       backgroundColor: 'var(--bg-deep)', padding: '2rem' 
     }}>
-      <div className="animate-fade" style={{ width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+      <div className="animate-fade card" style={{ width: '100%', maxWidth: '420px', textAlign: 'center' }}>
         <div style={{ 
-          fontSize: '4rem', marginBottom: '1.5rem', 
+          fontSize: '4rem', marginBottom: '2rem', 
           display: 'inline-block', padding: '1.5rem', 
-          borderRadius: '50%', backgroundColor: 'var(--bg-surface)',
-          boxShadow: '0 0 40px var(--accent-glow)',
+          borderRadius: '50%', backgroundColor: 'var(--bg-deep)',
+          boxShadow: '0 0 50px var(--accent-glow)',
           border: '1px solid var(--accent)'
         }}>
           🛡️
         </div>
         
-        <h1 style={{ marginBottom: '0.5rem' }}>Unlock Vault</h1>
-        <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem' }}>Enter your master credentials to decrypt.</p>
+        <h1 style={{ marginBottom: '0.75rem', fontSize: '2.25rem' }}>Unlock Vault</h1>
+        <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem', fontSize: '1.1rem' }}>Enter your master credentials to decrypt.</p>
 
-        <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '2rem', padding: '0.25rem', backgroundColor: '#000', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '2.5rem', padding: '0.4rem', backgroundColor: '#000', borderRadius: '14px', border: '1px solid var(--border)' }}>
           <button 
             onClick={() => setMode('passphrase')} 
             style={{ 
-              flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none', 
+              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
               backgroundColor: mode === 'passphrase' ? 'var(--bg-surface)' : 'transparent',
               color: mode === 'passphrase' ? 'var(--accent)' : 'var(--text-dim)',
-              fontSize: '0.8rem', fontWeight: 'bold'
+              fontSize: '0.85rem', fontWeight: '800'
             }}
           >
             Passphrase
@@ -217,10 +219,10 @@ export function Unlock() {
           <button 
             onClick={() => setMode('passkey')} 
             style={{ 
-              flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none', 
+              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
               backgroundColor: mode === 'passkey' ? 'var(--bg-surface)' : 'transparent',
               color: mode === 'passkey' ? 'var(--accent)' : 'var(--text-dim)',
-              fontSize: '0.8rem', fontWeight: 'bold'
+              fontSize: '0.85rem', fontWeight: '800'
             }}
           >
             Passkey
@@ -228,10 +230,10 @@ export function Unlock() {
           <button 
             onClick={() => setMode('recovery')} 
             style={{ 
-              flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none', 
+              flex: 1, padding: '0.75rem', borderRadius: '10px', border: 'none', 
               backgroundColor: mode === 'recovery' ? 'var(--bg-surface)' : 'transparent',
               color: mode === 'recovery' ? '#ffc800' : 'var(--text-dim)',
-              fontSize: '0.8rem', fontWeight: 'bold'
+              fontSize: '0.85rem', fontWeight: '800'
             }}
           >
             Recovery
@@ -246,18 +248,18 @@ export function Unlock() {
               value={passphrase} 
               onChange={e => setPassphrase(e.target.value)}
               required
-              style={{ width: '100%', padding: '1rem', marginBottom: '1.5rem', fontSize: '1.1rem', textAlign: 'center' }}
+              style={{ width: '100%', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '1.1rem', textAlign: 'center' }}
             />
             <button 
               type="submit" 
               disabled={loading}
               style={{ 
-                width: '100%', padding: '1rem', borderRadius: '10px', 
+                width: '100%', padding: '1.25rem', borderRadius: '12px', 
                 backgroundColor: 'var(--accent)', color: '#000', border: 'none', 
-                fontWeight: 'bold', fontSize: '1rem', opacity: loading ? 0.7 : 1
+                fontWeight: '800', fontSize: '1.1rem', opacity: loading ? 0.7 : 1
               }}
             >
-              {loading ? 'Decrypting...' : 'Open Vault'}
+              {loading ? 'Decrypting...' : 'Open Secure Vault'}
             </button>
           </form>
         ) : mode === 'passkey' ? (
@@ -265,10 +267,11 @@ export function Unlock() {
             onClick={handlePasskeyUnlock}
             disabled={loading}
             style={{ 
-              width: '100%', padding: '1rem', borderRadius: '10px', 
-              backgroundColor: 'var(--bg-surface)', color: 'var(--accent)', 
-              border: '1px solid var(--accent)', fontWeight: 'bold', 
-              fontSize: '1rem', opacity: loading ? 0.7 : 1
+              width: '100%', padding: '1.25rem', borderRadius: '12px', 
+              backgroundColor: 'var(--bg-deep)', color: 'var(--accent)', 
+              border: '1px solid var(--accent)', fontWeight: '800', 
+              fontSize: '1.1rem', opacity: loading ? 0.7 : 1,
+              boxShadow: '0 0 20px var(--accent-glow)'
             }}
           >
             {loading ? 'Verifying...' : 'Use Biometrics / Passkey'}
@@ -281,26 +284,26 @@ export function Unlock() {
               value={recoveryInput} 
               onChange={e => setRecoveryInput(e.target.value)}
               required
-              style={{ width: '100%', padding: '1rem', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center', color: '#ffc800', border: '1px solid #ffc800' }}
+              style={{ width: '100%', padding: '1.25rem', marginBottom: '1.5rem', fontSize: '0.9rem', textAlign: 'center', color: '#ffc800', border: '1px solid #ffc800' }}
             />
             <button 
               type="submit" 
               disabled={loading}
               style={{ 
-                width: '100%', padding: '1rem', borderRadius: '10px', 
+                width: '100%', padding: '1.25rem', borderRadius: '12px', 
                 backgroundColor: '#ffc800', color: '#000', border: 'none', 
-                fontWeight: 'bold', fontSize: '1rem', opacity: loading ? 0.7 : 1
+                fontWeight: '800', fontSize: '1.1rem', opacity: loading ? 0.7 : 1
               }}
             >
               {loading ? 'Recovering...' : 'Restore Vault Access'}
             </button>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '1rem' }}>
-              Warning: Recovery will grant full access to the vault.
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginTop: '1.5rem' }}>
+              <strong style={{ color: '#ffc800' }}>Warning:</strong> Recovery will grant full access to the vault.
             </p>
           </form>
         )}
 
-        {error && <p style={{ color: 'var(--error)', marginTop: '1.5rem', fontSize: '0.9rem' }}>{error}</p>}
+        {error && <p style={{ color: 'var(--error)', marginTop: '1.5rem', fontSize: '0.95rem', backgroundColor: 'rgba(255,77,77,0.1)', padding: '0.75rem', borderRadius: '8px' }}>{error}</p>}
       </div>
     </div>
   );
