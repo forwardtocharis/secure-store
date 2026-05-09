@@ -43,10 +43,19 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  const supportedExtensions = navigator.credentials.getExtensions ? navigator.credentials.getExtensions() : {};
+  let prfSupported = false;
+  try {
+    if (window.PublicKeyCredential && typeof PublicKeyCredential.getClientCapabilities === 'function') {
+      const caps = await PublicKeyCredential.getClientCapabilities("public-key");
+      prfSupported = caps.extensions?.includes("prf");
+    }
+  } catch (e) {
+    console.warn("Could not check client capabilities:", e);
+  }
+
   console.log("Starting Passkey Authentication...", { 
     credentialId, RP_ID, hostname: location.hostname,
-    prfSupported: !!supportedExtensions.prf 
+    prfSupported
   });
   
   const challenge = await fetchChallenge();
@@ -61,7 +70,7 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     },
   };
 
-  if (supportedExtensions.prf) {
+  if (prfSupported) {
     options.publicKey.extensions = { prf: { eval: { first: PRF_SALT } } };
   }
 
