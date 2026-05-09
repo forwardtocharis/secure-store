@@ -35,6 +35,7 @@ export function Login() {
   };
 
   const handlePasskeyLogin = async () => {
+    console.log("handlePasskeyLogin triggered");
     setError('');
     setLoading(true);
     try {

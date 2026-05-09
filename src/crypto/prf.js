@@ -43,17 +43,25 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
+  console.log("Starting Passkey Authentication...", { credentialId });
   const challenge = await fetchChallenge();
-  const assertion = await navigator.credentials.get({
+  console.log("Challenge received from server.");
+
+  const options = {
     publicKey: {
       challenge,
-      allowCredentials: credentialId
-        ? [{ type: "public-key", id: base64urlDecode(credentialId) }]
-        : [],
       userVerification: "required",
       extensions: { prf: { eval: { first: PRF_SALT } } },
     },
-  });
+  };
+
+  if (credentialId) {
+    options.publicKey.allowCredentials = [{ type: "public-key", id: base64urlDecode(credentialId) }];
+  }
+
+  console.log("Requesting navigator.credentials.get with options:", options);
+  const assertion = await navigator.credentials.get(options);
+  console.log("Assertion received from authenticator.");
 
   const extensionResults = typeof assertion.getClientExtensionResults === 'function'
     ? assertion.getClientExtensionResults()
