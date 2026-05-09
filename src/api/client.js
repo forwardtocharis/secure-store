@@ -38,15 +38,33 @@ export class VaultAPI {
   }
 
   async _fetch(path, options = {}) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: { ...this.headers, ...options.headers }
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'API Request Failed');
+    const url = `${API_BASE}${path}`;
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: { ...this.headers, ...options.headers }
+      });
+
+      if (!res.ok) {
+        let errorData;
+        try {
+          errorData = await res.json();
+        } catch (e) {
+          errorData = { error: `HTTP ${res.status} ${res.statusText}` };
+        }
+        console.error(`[API ERROR] ${options.method || 'GET'} ${url}:`, errorData);
+        throw new Error(errorData.error || 'API Request Failed');
+      }
+
+      return await res.json();
+    } catch (err) {
+      if (err.message === 'Failed to fetch') {
+        console.error(`[NETWORK ERROR] Failed to fetch ${url}. Check if the server is running and the endpoint is correct. API_BASE: ${API_BASE}`);
+      } else {
+        console.error(`[API FETCH EXCEPTION] ${options.method || 'GET'} ${url}:`, err);
+      }
+      throw err;
     }
-    return data;
   }
 
   async getChallenge() {

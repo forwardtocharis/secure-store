@@ -25,9 +25,12 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
+      console.log(`[LOGIN ATTEMPT] Email: ${email}, API_BASE: ${getApiBaseUrl()}`);
       const { token, email: userEmail, wrappedKeys: keys } = await api.login(email, password);
+      console.log(`[LOGIN SUCCESS] User: ${userEmail}`);
       loginIdentity(token, userEmail, null, keys);
     } catch (err) {
+      console.error(`[LOGIN FAILED]`, err);
       setError(err.message || 'Login failed');
     } finally {
       setLoading(false);

@@ -13,6 +13,7 @@ const ALLOWED_ORIGINS = [
   'http://localhost:4173',
   'http://127.0.0.1:4173',
   'http://localhost',
+  'https://localhost',
   'capacitor://localhost',
 ];
 
