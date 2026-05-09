@@ -19,7 +19,7 @@ auth.post('/login', async (c) => {
   const user = users.find(u => u.email === email);
 
   // Always run verification even on no-match to prevent timing-based user enumeration
-  const storedPassword = user?.password ?? 'pbkdf2:310000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
+  const storedPassword = user?.password ?? 'pbkdf2:100000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
   const { valid, needsUpgrade } = await verifyPasswordWithMigration(password, storedPassword);
 
   if (!user || !valid) {

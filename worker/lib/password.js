@@ -1,4 +1,4 @@
-const ITERATIONS = 310_000;
+const ITERATIONS = 100_000;
 const HASH_LENGTH = 32;
 const ALGORITHM = 'SHA-256';
 
