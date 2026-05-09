@@ -3,7 +3,7 @@ import { SignJWT } from 'jose';
 import { passphraseRateLimit } from '../middleware/rateLimit.js';
 import { getWrappedKeys } from '../lib/kv.js';
 import { getUsers, initializeUsers, saveUsers } from '../lib/users.js';
-import { hashPassword, verifyPassword } from '../lib/password.js';
+import { hashPassword, verifyPasswordWithMigration } from '../lib/password.js';
 import { verifySession } from '../middleware/session.js';
 
 const auth = new Hono();
@@ -18,12 +18,19 @@ auth.post('/login', async (c) => {
   const users = await getUsers(c.env.KV);
   const user = users.find(u => u.email === email);
 
-  // Always run verifyPassword even on no-match to prevent timing-based user enumeration
-  const passwordHash = user?.password ?? 'pbkdf2:310000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
-  const valid = await verifyPassword(password, passwordHash);
+  // Always run verification even on no-match to prevent timing-based user enumeration
+  const storedPassword = user?.password ?? 'pbkdf2:310000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
+  const { valid, needsUpgrade } = await verifyPasswordWithMigration(password, storedPassword);
 
   if (!user || !valid) {
     return c.json({ error: 'Invalid credentials' }, 401);
+  }
+
+  // One-time migration: upgrade legacy plaintext password to PBKDF2 hash on first login
+  if (needsUpgrade) {
+    const userIndex = users.findIndex(u => u.id === user.id);
+    users[userIndex].password = await hashPassword(password);
+    await saveUsers(c.env.KV, users);
   }
 
   const secret = new TextEncoder().encode(c.env.JWT_SECRET);

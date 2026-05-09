@@ -22,6 +22,20 @@ export async function hashPassword(password) {
   return `pbkdf2:${ITERATIONS}:${saltHex}:${hashHex}`;
 }
 
+// Returns { valid: bool, needsUpgrade: bool }
+// needsUpgrade is true when the stored password is legacy plaintext and the
+// password matched — the caller should hash and re-save it immediately.
+export async function verifyPasswordWithMigration(password, stored) {
+  if (!stored) return { valid: false, needsUpgrade: false };
+  if (!stored.startsWith('pbkdf2:')) {
+    // Legacy plaintext — constant-time compare to prevent timing attacks
+    const valid = timingSafeEqual(password, stored);
+    return { valid, needsUpgrade: valid };
+  }
+  const valid = await verifyPassword(password, stored);
+  return { valid, needsUpgrade: false };
+}
+
 export async function verifyPassword(password, stored) {
   if (!stored || !stored.startsWith('pbkdf2:')) return false;
   const [, iterStr, saltHex, expectedHashHex] = stored.split(':');
