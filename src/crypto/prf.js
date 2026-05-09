@@ -28,7 +28,9 @@ export async function enrollPasskey(label) {
     },
   });
 
-  const extensionResults = credential.getClientExtensionResults();
+  const extensionResults = typeof credential.getClientExtensionResults === 'function'
+    ? credential.getClientExtensionResults()
+    : (credential.clientExtensionResults ?? {});
   console.log("PRF Enrollment Extension Results:", JSON.stringify(extensionResults, null, 2));
   const prfOutput = extensionResults?.prf?.results?.first;
   
@@ -54,7 +56,9 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     },
   });
 
-  const extensionResults = assertion.getClientExtensionResults();
+  const extensionResults = typeof assertion.getClientExtensionResults === 'function'
+    ? assertion.getClientExtensionResults()
+    : (assertion.clientExtensionResults ?? {});
   console.log("Full WebAuthn Extension Results:", JSON.stringify(extensionResults, null, 2));
   
   const prfOutput = extensionResults?.prf?.results?.first;
