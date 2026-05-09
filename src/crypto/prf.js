@@ -43,13 +43,14 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  console.log("Starting Passkey Authentication...", { credentialId });
+  console.log("Starting Passkey Authentication...", { credentialId, RP_ID, hostname: location.hostname });
   const challenge = await fetchChallenge();
-  console.log("Challenge received from server.");
+  console.log("Challenge received from server:", challenge);
 
   const options = {
     publicKey: {
       challenge,
+      rpId: RP_ID,
       userVerification: "required",
       extensions: { prf: { eval: { first: PRF_SALT } } },
     },
@@ -59,13 +60,19 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     options.publicKey.allowCredentials = [{ type: "public-key", id: base64urlDecode(credentialId) }];
   }
 
-  console.log("Requesting navigator.credentials.get with options:", options);
-  const assertion = await navigator.credentials.get(options);
-  console.log("Assertion received from authenticator.");
-
-  const extensionResults = typeof assertion.getClientExtensionResults === 'function'
-    ? assertion.getClientExtensionResults()
-    : (assertion.clientExtensionResults ?? {});
+  console.log("Requesting navigator.credentials.get with options:", JSON.parse(JSON.stringify(options, (key, value) => {
+    if (value instanceof Uint8Array) return `Uint8Array(${value.length})`;
+    if (value instanceof ArrayBuffer) return `ArrayBuffer(${value.byteLength})`;
+    return value;
+  })));
+  
+  try {
+    const assertion = await navigator.credentials.get(options);
+    console.log("Assertion received from authenticator.");
+    
+    const extensionResults = typeof assertion.getClientExtensionResults === 'function'
+      ? assertion.getClientExtensionResults()
+      : (assertion.clientExtensionResults ?? {});
   const prfOutput = extensionResults?.prf?.results?.first;
 
   if (!prfOutput) {
