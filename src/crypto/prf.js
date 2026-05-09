@@ -10,12 +10,14 @@ new TextEncoder().encodeInto("vault-prf-v1-fixed-salt-32-bytes", PRF_SALT);
 const RP_ID = Capacitor.isNativePlatform() ? 'secure-store.pages.dev' : location.hostname;
 
 export async function enrollPasskey(label) {
-  const credential = await navigator.credentials.create({
+  console.log("enrollPasskey: starting, RP_ID =", RP_ID);
+
+  const createOptions = {
     publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      challenge: crypto.getRandomValues(new Uint8Array(32)).buffer,
       rp: { name: "SecureStore Vault", id: RP_ID },
       user: {
-        id: crypto.getRandomValues(new Uint8Array(16)),
+        id: crypto.getRandomValues(new Uint8Array(16)).buffer,
         name: label,
         displayName: label,
       },
@@ -26,15 +28,29 @@ export async function enrollPasskey(label) {
         residentKey: "required",
       },
     },
-  });
+  };
+
+  console.log("enrollPasskey: calling navigator.credentials.create()");
+  let credential;
+  try {
+    credential = await navigator.credentials.create(createOptions);
+  } catch (err) {
+    console.error("enrollPasskey: credentials.create() threw:", err.name, err.message);
+    throw err;
+  }
+  console.log("enrollPasskey: credential created", credential?.type, credential?.id);
 
   const extensionResults = typeof credential.getClientExtensionResults === 'function'
     ? credential.getClientExtensionResults()
     : (credential.clientExtensionResults ?? {});
   const prfOutput = extensionResults?.prf?.results?.first;
-  
+  console.log("enrollPasskey: PRF extension results:", {
+    prf: extensionResults?.prf,
+    enabled: extensionResults?.prf?.enabled,
+    hasOutput: !!prfOutput,
+  });
+
   if (!prfOutput) {
-    console.error("PRF Enrollment Failed:", extensionResults);
     throw new Error("PRF extension not supported or failed on this device. Ensure you are using a modern browser and a compatible authenticator (TouchID, FaceID, Windows Hello, or a Security Key).");
   }
 
@@ -43,39 +59,29 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  // Default to true so PRF is always attempted; capability check may disable it.
-  let prfSupported = true;
-  try {
-    if (window.PublicKeyCredential && typeof PublicKeyCredential.getClientCapabilities === 'function') {
-      const caps = await PublicKeyCredential.getClientCapabilities();
-      // caps.prf is a boolean — true if the platform supports the PRF extension
-      prfSupported = !!caps.prf;
-    }
-  } catch (e) {
-    console.warn("Could not check client capabilities, assuming PRF supported:", e);
-  }
-
   console.log("Starting Passkey Authentication...", {
     credentialId, RP_ID, hostname: location.hostname,
-    prfSupported
   });
 
   const challenge = await fetchChallenge();
   console.log("Challenge received from server:", challenge);
 
+  // Always send the PRF extension — browsers/authenticators that don't support
+  // it will simply ignore it. Gating on getClientCapabilities() was causing it
+  // to be omitted even on supporting platforms (caps.prf reflects platform
+  // authenticator state, not browser extension support).
+  const rawChallenge = challenge instanceof Uint8Array ? challenge.buffer : challenge;
+
   const options = {
+    mediation: 'optional',
     publicKey: {
-      challenge: challenge.buffer || challenge,
+      challenge: rawChallenge,
       rpId: RP_ID,
       userVerification: "preferred",
       timeout: 60000,
       extensions: { prf: { eval: { first: PRF_SALT } } },
     },
   };
-
-  if (!prfSupported) {
-    delete options.publicKey.extensions;
-  }
 
   if (credentialId) {
     options.publicKey.allowCredentials = [{ type: "public-key", id: base64urlDecode(credentialId) }];
@@ -86,27 +92,37 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     if (value instanceof ArrayBuffer) return `ArrayBuffer(${value.byteLength})`;
     return value;
   })));
-  
+
+  const abortController = new AbortController();
+  options.signal = abortController.signal;
+
+  let assertion;
   try {
-    const assertion = await navigator.credentials.get(options);
-    console.log("Assertion received from authenticator.");
-    
-    const extensionResults = typeof assertion.getClientExtensionResults === 'function'
-      ? assertion.getClientExtensionResults()
-      : (assertion.clientExtensionResults ?? {});
-    const prfOutput = extensionResults?.prf?.results?.first;
-
-    if (!prfOutput) {
-      console.warn("PRF output missing. Proceeding with Layer 1 login only.");
-      return { assertion, unwrappingKey: null };
-    }
-
-    const unwrappingKey = await derivePRFKey(prfOutput);
-    return { assertion, unwrappingKey };
+    assertion = await navigator.credentials.get(options);
   } catch (err) {
-    console.error("WebAuthn get() failed:", err);
+    console.error("WebAuthn get() failed:", { name: err.name, message: err.message });
     throw err;
   }
+
+  if (!assertion) {
+    throw new Error("No credential returned. The passkey prompt may have been dismissed.");
+  }
+
+  console.log("Assertion received from authenticator.");
+
+  const extensionResults = typeof assertion.getClientExtensionResults === 'function'
+    ? assertion.getClientExtensionResults()
+    : (assertion.clientExtensionResults ?? {});
+  const prfOutput = extensionResults?.prf?.results?.first;
+  console.log("PRF extension results:", { hasPrf: !!extensionResults?.prf, hasResults: !!extensionResults?.prf?.results, hasOutput: !!prfOutput });
+
+  if (!prfOutput) {
+    console.warn("PRF output missing. Proceeding with Layer 1 login only.");
+    return { assertion, unwrappingKey: null };
+  }
+
+  const unwrappingKey = await derivePRFKey(prfOutput);
+  return { assertion, unwrappingKey };
 }
 
 export async function derivePRFKey(prfOutput) {
