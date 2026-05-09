@@ -30,4 +30,9 @@ app.route('/api/files', files);
 
 app.get('/', (c) => c.text('Vault Worker Running'));
 
+app.onError((err, c) => {
+  console.error(err);
+  return c.json({ error: err.message, stack: err.stack }, 500);
+});
+
 export default app;

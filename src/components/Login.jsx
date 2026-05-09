@@ -4,6 +4,7 @@ import { useVault } from '../store/vault.jsx';
 import { serializeCredential } from '../crypto/util.js';
 import { authenticatePasskey } from '../crypto/prf.js';
 import { unwrapMEK } from '../crypto/mek.js';
+import { Capacitor } from '@capacitor/core';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -193,29 +194,31 @@ export function Login() {
         </form>
         
         <div style={{ marginTop: '2rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
-          {showSettings ? (
-            <div>
-              <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>SERVER ENDPOINT</label>
-              <input
-                type="text"
-                value={serverUrl}
-                onChange={e => setServerUrl(e.target.value)}
-                placeholder="https://your-server.com/api"
-                style={{ width: '100%', padding: '1rem', marginBottom: '1rem', fontSize: '1rem' }}
-              />
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <button type="button" onClick={() => setShowSettings(false)} style={{ flex: 1, padding: '1rem', borderRadius: '10px', background: 'transparent', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>Cancel</button>
-                <button type="button" onClick={handleSaveServer} style={{ flex: 1, padding: '1rem', borderRadius: '10px', background: 'var(--accent)', color: '#000', border: 'none', fontWeight: 'bold' }}>Save</button>
+          {Capacitor.isNativePlatform() && (
+            showSettings ? (
+              <div>
+                <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>SERVER ENDPOINT</label>
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={e => setServerUrl(e.target.value)}
+                  placeholder="https://your-server.com/api"
+                  style={{ width: '100%', padding: '1rem', marginBottom: '1rem', fontSize: '1rem' }}
+                />
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button type="button" onClick={() => setShowSettings(false)} style={{ flex: 1, padding: '1rem', borderRadius: '10px', background: 'transparent', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>Cancel</button>
+                  <button type="button" onClick={handleSaveServer} style={{ flex: 1, padding: '1rem', borderRadius: '10px', background: 'var(--accent)', color: '#000', border: 'none', fontWeight: 'bold' }}>Save</button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowSettings(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.85rem', textDecoration: 'underline' }}
-            >
-              Configure Server Endpoint
-            </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.85rem', textDecoration: 'underline' }}
+              >
+                Configure Server Endpoint
+              </button>
+            )
           )}
         </div>
       </div>
