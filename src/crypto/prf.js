@@ -58,9 +58,12 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
       rpId: RP_ID,
       userVerification: "preferred",
       timeout: 60000,
-      extensions: { prf: { eval: { first: PRF_SALT } } },
     },
   };
+
+  if (supportedExtensions.prf) {
+    options.publicKey.extensions = { prf: { eval: { first: PRF_SALT } } };
+  }
 
   if (credentialId) {
     options.publicKey.allowCredentials = [{ type: "public-key", id: base64urlDecode(credentialId) }];
@@ -82,19 +85,8 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     const prfOutput = extensionResults?.prf?.results?.first;
 
     if (!prfOutput) {
-      const isEnabled = extensionResults?.prf?.enabled;
-      console.error("PRF Authentication Failed. Extension Data:", {
-        prfSupportedByBrowser: !!navigator.credentials.getExtensions?.().prf,
-        prfEnabledInResult: isEnabled,
-        hasResults: !!extensionResults?.prf?.results,
-        hostname: RP_ID
-      });
-      
-      if (isEnabled === false) {
-        throw new Error("PRF extension was explicitly disabled by the authenticator. This usually means the passkey was registered on a different domain or without PRF support.");
-      }
-      
-      throw new Error("PRF output missing. If you just updated the app, you may need to re-enroll your passkey in Settings to enable the PRF extension for this specific domain.");
+      console.warn("PRF output missing. Proceeding with Layer 1 login only.");
+      return { assertion, unwrappingKey: null };
     }
 
     const unwrappingKey = await derivePRFKey(prfOutput);
