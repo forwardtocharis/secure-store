@@ -58,11 +58,20 @@ export function Settings({ onBack }) {
 
   const handleAddPasskey = async (e) => {
     e.preventDefault();
+    const label = passkeyLabel || 'New Passkey Device';
+    // credentials.create() must be called immediately within the user gesture —
+    // no state updates or awaits before it, or Chrome silently drops the activation.
+    let enrollResult;
+    try {
+      enrollResult = await enrollPasskey(label);
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
     try {
       setError('');
       setMessage('');
-      const label = passkeyLabel || 'New Passkey Device';
-      const { credential, unwrappingKey } = await enrollPasskey(label);
+      const { credential, unwrappingKey } = enrollResult;
       const wrappedMEK = await wrapMEK(mek, unwrappingKey);
       const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
       await api.addKey({

@@ -30,7 +30,9 @@ export async function enrollPasskey(label) {
     },
   };
 
-  console.log("enrollPasskey: calling navigator.credentials.create()");
+  const abortController = new AbortController();
+  createOptions.signal = abortController.signal;
+  console.log("enrollPasskey: calling navigator.credentials.create(), origin =", location.origin);
   let credential;
   try {
     credential = await navigator.credentials.create(createOptions);

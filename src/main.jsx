@@ -7,9 +7,13 @@ import { Unlock } from './components/Unlock.jsx';
 import { Vault } from './components/Vault.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { CapacitorPasskey } from '@capgo/capacitor-passkey';
+import { Capacitor } from '@capacitor/core';
 
-// Automatically shim the browser's navigator.credentials API to route to the native device OS.
-CapacitorPasskey.autoShimWebAuthn();
+// Only shim on native platforms — on web, the shim intercepts navigator.credentials
+// and crashes trying to JSON-serialize binary WebAuthn options (PRF Uint8Arrays).
+if (Capacitor.isNativePlatform()) {
+  CapacitorPasskey.autoShimWebAuthn();
+}
 
 function App() {
   const { identity, mek, loading, logout } = useVault();
