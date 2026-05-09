@@ -66,13 +66,12 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     return value;
   })));
   
-  try {
-    const assertion = await navigator.credentials.get(options);
-    console.log("Assertion received from authenticator.");
-    
-    const extensionResults = typeof assertion.getClientExtensionResults === 'function'
-      ? assertion.getClientExtensionResults()
-      : (assertion.clientExtensionResults ?? {});
+  const assertion = await navigator.credentials.get(options);
+  console.log("Assertion received from authenticator.");
+  
+  const extensionResults = typeof assertion.getClientExtensionResults === 'function'
+    ? assertion.getClientExtensionResults()
+    : (assertion.clientExtensionResults ?? {});
   const prfOutput = extensionResults?.prf?.results?.first;
 
   if (!prfOutput) {
