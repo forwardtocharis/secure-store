@@ -47,10 +47,7 @@ files.put('/upload/:fileId', async (c) => {
     return c.json({ success: true });
   } catch (err) {
     console.error('Streaming upload failed:', err);
-    return c.json({ 
-      error: `Upload streaming failed: ${err.message}`,
-      stack: err.stack 
-    }, 500);
+    return c.json({ error: 'Upload failed' }, 500);
   }
 });
 

@@ -1,50 +1,35 @@
-import { Capacitor } from '@capacitor/core';
-import { Preferences } from '@capacitor/preferences';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
-// In a real app, this would use @capacitor-community/biometric-auth and a secure storage plugin 
-// (e.g., @capgo/capacitor-secure-storage) to persist keys in Android Keystore.
-// For this MVP, we use Capacitor Preferences to simulate the Keystore persistence.
+const SecureStorage = registerPlugin('SecureStorage');
 
 export async function isBiometricAvailable() {
   if (!Capacitor.isNativePlatform()) return false;
-  return true;
+  try {
+    const { available } = await SecureStorage.isBiometricAvailable();
+    return available === true;
+  } catch {
+    return false;
+  }
 }
 
-export async function promptBiometric(reason = "Unlock SecureStore") {
-  if (!Capacitor.isNativePlatform()) return true;
-  
-  // Mock biometric prompt. In a real app this would trigger the native fingerprint/face UI.
-  console.log(`[Native Biometric] Prompting for: ${reason}`);
-  return new Promise((resolve) => {
-    // Simulate biometric delay and success
-    setTimeout(() => resolve(true), 500);
-  });
-}
-
-export async function saveSecureMEK(wrappedMek) {
+export async function saveSecureMEK(mekBase64) {
   if (!Capacitor.isNativePlatform()) return false;
-  
-  // Mocking Android Keystore persistence
-  await Preferences.set({
-    key: 'secure_mek',
-    value: JSON.stringify(wrappedMek)
-  });
+  await SecureStorage.saveMEK({ mek: mekBase64 });
   return true;
 }
 
+// Triggers the native BiometricPrompt. The biometric challenge and MEK
+// decryption happen atomically in native code — the hardware enforces auth.
+// Throws "KEY_INVALIDATED" if the user re-enrolled biometrics since last save.
+// Throws "BIOMETRIC_ERROR:{code}:{msg}" if the user cancels or hardware fails.
+// Returns null if no MEK has been saved yet (first-run case).
 export async function getSecureMEK() {
   if (!Capacitor.isNativePlatform()) return null;
-  
-  const { value } = await Preferences.get({ key: 'secure_mek' });
-  if (!value) return null;
-  
-  // Ensure the user passes biometric auth before returning the key
-  const authSuccess = await promptBiometric("Unlock vault keys");
-  if (!authSuccess) throw new Error("Biometric authentication failed");
-  
-  return JSON.parse(value);
+  const result = await SecureStorage.getMEK();
+  return result?.mek ?? null;
 }
 
 export async function clearSecureMEK() {
-  await Preferences.remove({ key: 'secure_mek' });
+  if (!Capacitor.isNativePlatform()) return;
+  await SecureStorage.clearMEK();
 }

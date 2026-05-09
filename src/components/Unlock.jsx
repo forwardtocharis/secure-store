@@ -39,7 +39,12 @@ export function Unlock() {
           await unlockVault(mek);
         }
       } catch (err) {
-        console.warn("Native auto-unlock failed:", err);
+        if (err.message?.includes('KEY_INVALIDATED')) {
+          // Biometric enrollments changed since the MEK was sealed.
+          // User must unlock once via passphrase to re-register biometrics.
+          if (mounted) setError('Your biometrics changed. Unlock with your passphrase to re-register.');
+        }
+        // BIOMETRIC_ERROR (user canceled) and other transient errors fall through silently.
       } finally {
         if (mounted) setLoading(false);
       }

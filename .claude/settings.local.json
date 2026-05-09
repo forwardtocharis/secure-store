@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"c:\\\\\\\\Coding\\\\\\\\SecureStore\")",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\\\\\\\\src\" -type f -name \"*.js\" -o -name \"*.ts\" -o -name \"*.json\")",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\\\\\\\\worker\" -type f)",
+      "Bash(npx cap *)"
+    ]
+  }
+}

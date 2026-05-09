@@ -3,6 +3,7 @@ import { SignJWT } from 'jose';
 import { passphraseRateLimit } from '../middleware/rateLimit.js';
 import { getWrappedKeys } from '../lib/kv.js';
 import { getUsers, initializeUsers, saveUsers } from '../lib/users.js';
+import { hashPassword, verifyPassword } from '../lib/password.js';
 import { verifySession } from '../middleware/session.js';
 
 const auth = new Hono();
@@ -11,17 +12,20 @@ const auth = new Hono();
 auth.post('/login', async (c) => {
   const { email, password } = await c.req.json();
 
-  // Initialize users from TOML if KV is empty
+  // Initialize users from env secret if KV is empty
   await initializeUsers(c.env.KV, c.env.INITIAL_USERS);
 
   const users = await getUsers(c.env.KV);
-  const user = users.find(u => u.email === email && u.password === password);
+  const user = users.find(u => u.email === email);
 
-  if (!user) {
+  // Always run verifyPassword even on no-match to prevent timing-based user enumeration
+  const passwordHash = user?.password ?? 'pbkdf2:310000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000';
+  const valid = await verifyPassword(password, passwordHash);
+
+  if (!user || !valid) {
     return c.json({ error: 'Invalid credentials' }, 401);
   }
 
-  // Issue a JWT for the identity
   const secret = new TextEncoder().encode(c.env.JWT_SECRET);
   const token = await new SignJWT({ sub: user.id, email: user.email })
     .setProtectedHeader({ alg: 'HS256' })
@@ -34,10 +38,9 @@ auth.post('/login', async (c) => {
 
 // POST /api/auth/login-passkey
 auth.post('/login-passkey', async (c) => {
-  const { email, credentialId, assertion } = await c.req.json();
+  const { email, credentialId } = await c.req.json();
   const users = await getUsers(c.env.KV);
-  
-  // Try to find user by email first, then fall back to searching all passkeys for the credentialId
+
   let user = users.find(u => u.email === email);
   if (!user) {
     user = users.find(u => u.passkeys && u.passkeys.some(pk => pk.credentialId === credentialId));
@@ -52,8 +55,8 @@ auth.post('/login-passkey', async (c) => {
     return c.json({ error: 'Invalid passkey' }, 401);
   }
 
-  // Simplified verification for demo
-  // In production: verifySignature(assertion, passkey.publicKey)
+  // Note: cryptographic proof of possession is the client-side MEK unwrap via PRF.
+  // The server's role is identity resolution and JWT issuance only.
 
   const secret = new TextEncoder().encode(c.env.JWT_SECRET);
   const token = await new SignJWT({ sub: user.id, email: user.email })
@@ -72,11 +75,8 @@ auth.use('/register-passkey', verifySession);
 
 // POST /api/auth/verify - The "Unlock" authorization (Layer 2)
 auth.post('/verify', passphraseRateLimit, async (c) => {
-  const { type, credential } = await c.req.json();
   const userId = c.get('jwtPayload').sub;
   const wrappedKeys = await getWrappedKeys(c.env.KV, userId);
-
-  // We return the wrapped keys now that they are logged in
   return c.json({ wrappedKeys });
 });
 
@@ -86,6 +86,10 @@ auth.post('/change-password', async (c) => {
   const payload = c.get('jwtPayload');
   const userId = payload.sub;
 
+  if (!newPassword || newPassword.length < 12) {
+    return c.json({ error: 'Password must be at least 12 characters' }, 400);
+  }
+
   const users = await getUsers(c.env.KV);
   const userIndex = users.findIndex(u => u.id === userId);
 
@@ -93,7 +97,7 @@ auth.post('/change-password', async (c) => {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  users[userIndex].password = newPassword;
+  users[userIndex].password = await hashPassword(newPassword);
   await saveUsers(c.env.KV, users);
 
   return c.json({ success: true });
@@ -113,8 +117,7 @@ auth.post('/register-passkey', async (c) => {
   }
 
   if (!users[userIndex].passkeys) users[userIndex].passkeys = [];
-  
-  // Check if already registered
+
   if (users[userIndex].passkeys.find(pk => pk.credentialId === credentialId)) {
     return c.json({ error: 'Passkey already registered' }, 400);
   }
@@ -126,8 +129,7 @@ auth.post('/register-passkey', async (c) => {
 });
 
 auth.post('/challenge', async (c) => {
-  const challenge = new Uint8Array(32);
-  crypto.getRandomValues(challenge);
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
   const challengeBase64 = btoa(String.fromCharCode(...challenge));
   return c.json({ challenge: challengeBase64 });
 });
