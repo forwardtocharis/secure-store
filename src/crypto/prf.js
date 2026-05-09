@@ -43,15 +43,21 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  console.log("Starting Passkey Authentication...", { credentialId, RP_ID, hostname: location.hostname });
+  const supportedExtensions = navigator.credentials.getExtensions ? navigator.credentials.getExtensions() : {};
+  console.log("Starting Passkey Authentication...", { 
+    credentialId, RP_ID, hostname: location.hostname,
+    prfSupported: !!supportedExtensions.prf 
+  });
+  
   const challenge = await fetchChallenge();
   console.log("Challenge received from server:", challenge);
 
   const options = {
     publicKey: {
-      challenge,
+      challenge: challenge.buffer || challenge,
       rpId: RP_ID,
-      userVerification: "required",
+      userVerification: "preferred",
+      timeout: 60000,
       extensions: { prf: { eval: { first: PRF_SALT } } },
     },
   };
@@ -66,32 +72,37 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     return value;
   })));
   
-  const assertion = await navigator.credentials.get(options);
-  console.log("Assertion received from authenticator.");
-  
-  const extensionResults = typeof assertion.getClientExtensionResults === 'function'
-    ? assertion.getClientExtensionResults()
-    : (assertion.clientExtensionResults ?? {});
-  const prfOutput = extensionResults?.prf?.results?.first;
-
-  if (!prfOutput) {
-    const isEnabled = extensionResults?.prf?.enabled;
-    console.error("PRF Authentication Failed. Extension Data:", {
-      prfSupportedByBrowser: !!navigator.credentials.getExtensions?.().prf,
-      prfEnabledInResult: isEnabled,
-      hasResults: !!extensionResults?.prf?.results,
-      hostname: RP_ID
-    });
+  try {
+    const assertion = await navigator.credentials.get(options);
+    console.log("Assertion received from authenticator.");
     
-    if (isEnabled === false) {
-      throw new Error("PRF extension was explicitly disabled by the authenticator. This usually means the passkey was registered on a different domain or without PRF support.");
+    const extensionResults = typeof assertion.getClientExtensionResults === 'function'
+      ? assertion.getClientExtensionResults()
+      : (assertion.clientExtensionResults ?? {});
+    const prfOutput = extensionResults?.prf?.results?.first;
+
+    if (!prfOutput) {
+      const isEnabled = extensionResults?.prf?.enabled;
+      console.error("PRF Authentication Failed. Extension Data:", {
+        prfSupportedByBrowser: !!navigator.credentials.getExtensions?.().prf,
+        prfEnabledInResult: isEnabled,
+        hasResults: !!extensionResults?.prf?.results,
+        hostname: RP_ID
+      });
+      
+      if (isEnabled === false) {
+        throw new Error("PRF extension was explicitly disabled by the authenticator. This usually means the passkey was registered on a different domain or without PRF support.");
+      }
+      
+      throw new Error("PRF output missing. If you just updated the app, you may need to re-enroll your passkey in Settings to enable the PRF extension for this specific domain.");
     }
-    
-    throw new Error("PRF output missing. If you just updated the app, you may need to re-enroll your passkey in Settings to enable the PRF extension for this specific domain.");
-  }
 
-  const unwrappingKey = await derivePRFKey(prfOutput);
-  return { assertion, unwrappingKey };
+    const unwrappingKey = await derivePRFKey(prfOutput);
+    return { assertion, unwrappingKey };
+  } catch (err) {
+    console.error("WebAuthn get() failed:", err);
+    throw err;
+  }
 }
 
 export async function derivePRFKey(prfOutput) {
