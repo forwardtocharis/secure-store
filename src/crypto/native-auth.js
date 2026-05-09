@@ -14,8 +14,15 @@ export async function isBiometricAvailable() {
 
 export async function saveSecureMEK(mekBase64) {
   if (!Capacitor.isNativePlatform()) return false;
-  await SecureStorage.saveMEK({ mek: mekBase64 });
-  return true;
+  try {
+    console.log(`[BIOMETRIC] Attempting to save MEK natively. Length: ${mekBase64?.length}`);
+    await SecureStorage.saveMEK({ mek: mekBase64 });
+    console.log(`[BIOMETRIC] MEK saved successfully.`);
+    return true;
+  } catch (err) {
+    console.error(`[BIOMETRIC] Failed to save MEK natively:`, err);
+    throw err;
+  }
 }
 
 // Triggers the native BiometricPrompt. The biometric challenge and MEK

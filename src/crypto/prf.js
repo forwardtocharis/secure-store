@@ -32,27 +32,49 @@ export async function enrollPasskey(label) {
 
   const abortController = new AbortController();
   createOptions.signal = abortController.signal;
-  console.log("enrollPasskey: calling navigator.credentials.create(), origin =", location.origin);
+  console.log("enrollPasskey: calling navigator.credentials.create(). Origin:", location.origin);
+  console.log("enrollPasskey: [DEBUG] createOptions:", JSON.parse(JSON.stringify(createOptions, (k, v) => {
+    if (v instanceof Uint8Array) return Array.from(v);
+    if (v instanceof ArrayBuffer) return Array.from(new Uint8Array(v));
+    return v;
+  })));
+
   let credential;
   try {
     credential = await navigator.credentials.create(createOptions);
+    console.log("enrollPasskey: [DEBUG] RAW credential object:", credential);
+    console.log("enrollPasskey: [DEBUG] credential.constructor.name:", credential?.constructor?.name);
+    console.log("enrollPasskey: [DEBUG] typeof getClientExtensionResults:", typeof credential?.getClientExtensionResults);
+    if (typeof credential?.getClientExtensionResults === 'function') {
+      console.log("enrollPasskey: [DEBUG] getClientExtensionResults() output:", credential.getClientExtensionResults());
+    }
   } catch (err) {
-    console.error("enrollPasskey: credentials.create() threw:", err.name, err.message);
+    console.error("enrollPasskey: credentials.create() threw:", {
+      name: err.name,
+      message: err.message,
+      stack: err.stack,
+      err
+    });
     throw err;
   }
+
   console.log("enrollPasskey: credential created", credential?.type, credential?.id);
 
   const extensionResults = typeof credential.getClientExtensionResults === 'function'
     ? credential.getClientExtensionResults()
     : (credential.clientExtensionResults ?? {});
+  
   const prfOutput = extensionResults?.prf?.results?.first;
-  console.log("enrollPasskey: PRF extension results:", {
+  
+  console.log("enrollPasskey: PRF extension results summary:", {
+    fullResults: extensionResults,
     prf: extensionResults?.prf,
     enabled: extensionResults?.prf?.enabled,
     hasOutput: !!prfOutput,
   });
 
   if (!prfOutput) {
+    console.error("enrollPasskey: PRF output MISSING. Extension results were:", extensionResults);
     throw new Error("PRF extension not supported or failed on this device. Ensure you are using a modern browser and a compatible authenticator (TouchID, FaceID, Windows Hello, or a Security Key).");
   }
 
