@@ -43,21 +43,23 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  let prfSupported = false;
+  // Default to true so PRF is always attempted; capability check may disable it.
+  let prfSupported = true;
   try {
     if (window.PublicKeyCredential && typeof PublicKeyCredential.getClientCapabilities === 'function') {
-      const caps = await PublicKeyCredential.getClientCapabilities("public-key");
-      prfSupported = caps.extensions?.includes("prf");
+      const caps = await PublicKeyCredential.getClientCapabilities();
+      // caps.prf is a boolean — true if the platform supports the PRF extension
+      prfSupported = !!caps.prf;
     }
   } catch (e) {
-    console.warn("Could not check client capabilities:", e);
+    console.warn("Could not check client capabilities, assuming PRF supported:", e);
   }
 
-  console.log("Starting Passkey Authentication...", { 
+  console.log("Starting Passkey Authentication...", {
     credentialId, RP_ID, hostname: location.hostname,
     prfSupported
   });
-  
+
   const challenge = await fetchChallenge();
   console.log("Challenge received from server:", challenge);
 
@@ -67,11 +69,12 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
       rpId: RP_ID,
       userVerification: "preferred",
       timeout: 60000,
+      extensions: { prf: { eval: { first: PRF_SALT } } },
     },
   };
 
-  if (prfSupported) {
-    options.publicKey.extensions = { prf: { eval: { first: PRF_SALT } } };
+  if (!prfSupported) {
+    delete options.publicKey.extensions;
   }
 
   if (credentialId) {
