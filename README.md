@@ -1,6 +1,6 @@
 # SecureStore
 
-SecureStore is a **Zero-Knowledge** personal vault designed for high-security storage of credentials, notes, and documents. It utilizes **Client-Side Encryption (CSE)**, meaning the server (Cloudflare) never has access to the raw data or the encryption keys.
+SecureStore is a **Zero-Knowledge Shared Family Vault** designed for high-security storage of credentials, notes, and documents. It utilizes **Client-Side Encryption (CSE)** and a shared data model for trusted family members.
 
 ## 🛡️ Core Philosophy
 * **Trust Nothing**: The server only stores "ciphertext" (encrypted noise).
@@ -18,7 +18,7 @@ SecureStore is a **Zero-Knowledge** personal vault designed for high-security st
 * **Zero-Knowledge Architecture**: All encryption and decryption happen locally in the browser using the Web Crypto API.
 * **Dual-Layer Authentication**: Identity gatekeeper (Password or Passkey) issues a JWT session, and a separate Access layer (Passphrase, WebAuthn PRF, or Emergency Recovery Key) unwrap the shared Master Encryption Key (MEK) locally.
 * **Large File Streaming**: Directly pipe streams into Cloudflare R2 to bypass worker memory limits. Files are encrypted with unique Data Encryption Keys (DEKs).
-* **Multi-User Sharing**: Supports a "Shared Vault" model where authorized family members can access a shared MEK, wrapped securely with their own individual keys.
+* **Shared Family Model**: Designed for a single shared vault. While authentication is individual, all authorized family members access a common pool of encrypted metadata and documents (isolated by Layer 2 encryption).
 * **Security Controls**: Includes an Auto-Lock inactivity timer and Emergency Recovery Keys.
 
 ## 🚀 Getting Started

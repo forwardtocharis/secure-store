@@ -1,7 +1,7 @@
 # SecureStore: Developer & Architecture Guide
 
 ## 1. Project Overview
-SecureStore is a **Zero-Knowledge** personal vault designed for high-security storage of credentials, notes, and documents. It utilizes **Client-Side Encryption (CSE)**, meaning the server (Cloudflare) never has access to the raw data or the encryption keys.
+SecureStore is a **Zero-Knowledge Shared Family Vault** designed for high-security storage of credentials, notes, and documents. It utilizes **Client-Side Encryption (CSE)** and a shared storage model.
 
 ### Core Philosophy
 *   **Trust Nothing**: The server only stores "ciphertext" (encrypted noise).
@@ -96,7 +96,26 @@ SecureStore supports a "Shared Vault" model for families.
 
 ---
 
-## 8. Deployment & Setup
+## 8. Shared Data Architecture & Isolation
+SecureStore uses a **Single-Tenant Shared Storage** model by design.
+
+*   **Global Index**: All users with a valid Layer 1 JWT share access to the same encrypted index in KV (`vault:index`). 
+*   **Global Objects**: Encrypted documents in R2 are stored in a global pool.
+*   **Isolation Strategy**: Isolation is enforced at **Layer 2 (Encryption)**. While any user can technically fetch any encrypted blob, they cannot decrypt it without the shared **Master Encryption Key (MEK)**.
+*   **Trust Model**: This model assumes all users on the platform (family members) are trusted and share access to the same vault. It is **not** suitable for hosting multiple independent users who should not see each other's metadata.
+
+---
+
+## 9. Appendix: Known Security Caveats (MVP State)
+The current implementation includes several trade-offs that should be addressed before wider exposure:
+
+1.  **Plaintext Layer 1 Passwords**: Backend currently stores/compares login passwords in plaintext.
+2.  **Mock Passkey Verification**: WebAuthn signature verification is currently bypassed in the worker.
+3.  **Mock Biometric Prompt**: The Android client auto-unlocks after a mocked 500ms delay rather than a real biometric challenge.
+
+---
+
+## 10. Deployment & Setup
 1.  **Config**: Define `INITIAL_USERS` and `JWT_SECRET` in `wrangler.toml`.
 2.  **Dev**: Run `npm run dev` for the frontend.
 3.  **Worker**: Use `npx wrangler dev` to test the backend locally with KV/R2 persistence.
