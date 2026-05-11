@@ -25,6 +25,18 @@ export async function saveSecureMEK(mekBase64) {
   }
 }
 
+// Returns true if a MEK ciphertext is stored in SharedPreferences.
+// Does NOT touch the KeyStore or trigger a biometric prompt.
+export async function isSecureMEKEnrolled() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const { enrolled } = await SecureStorage.hasMEK();
+    return enrolled === true;
+  } catch {
+    return false;
+  }
+}
+
 // Triggers the native BiometricPrompt. The biometric challenge and MEK
 // decryption happen atomically in native code — the hardware enforces auth.
 // Throws "KEY_INVALIDATED" if the user re-enrolled biometrics since last save.

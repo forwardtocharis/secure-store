@@ -6,6 +6,9 @@ import { derivePassphraseKey } from '../crypto/passphrase.js';
 import { enrollPasskey } from '../crypto/prf.js';
 import { wrapMEK } from '../crypto/mek.js';
 
+import { isSecureMEKEnrolled, saveSecureMEK, clearSecureMEK, isBiometricAvailable } from '../crypto/native-auth.js';
+import { exportMEK } from '../crypto/mek.js';
+
 const IS_ANDROID = Capacitor.getPlatform() === 'android';
 
 export function Settings({ onBack }) {
@@ -22,6 +25,8 @@ export function Settings({ onBack }) {
   const [sharePassphrase, setSharePassphrase] = useState('');
 
   const [recoveryKey, setRecoveryKey] = useState('');
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricSupported, setBiometricSupported] = useState(false);
 
   const loadKeys = async () => {
     try {
@@ -32,7 +37,13 @@ export function Settings({ onBack }) {
     }
   };
 
-  useEffect(() => { loadKeys(); }, []);
+  useEffect(() => { 
+    loadKeys(); 
+    if (IS_ANDROID) {
+      isBiometricAvailable().then(setBiometricSupported);
+      isSecureMEKEnrolled().then(setBiometricEnabled);
+    }
+  }, []);
 
   const handleGenerateRecoveryKey = async () => {
     try {
@@ -121,24 +132,24 @@ export function Settings({ onBack }) {
 
   const handleShareVault = async (e) => {
     e.preventDefault();
+    setError('Vault sharing is not yet implemented.');
+  };
+
+  const handleToggleBiometrics = async () => {
     try {
       setError('');
-      setMessage('');
-      const { unwrappingKey, salt } = await derivePassphraseKey(sharePassphrase);
-      const wrappedMEK = await wrapMEK(mek, unwrappingKey);
-      await api.shareKey({
-        targetEmail: shareEmail,
-        type: 'passphrase',
-        label: `Shared by ${api.token ? 'Family Member' : 'Owner'}`,
-        wrappedMEK,
-        iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12)))),
-        salt
-      });
-      setMessage(`Vault access shared with ${shareEmail}.`);
-      setShareEmail('');
-      setSharePassphrase('');
+      if (biometricEnabled) {
+        await clearSecureMEK();
+        setBiometricEnabled(false);
+        setMessage('Native biometric unlock disabled.');
+      } else {
+        const exported = await exportMEK(mek);
+        await saveSecureMEK(exported);
+        setBiometricEnabled(true);
+        setMessage('Native biometric unlock enabled for this device!');
+      }
     } catch (err) {
-      setError('Sharing failed: ' + err.message);
+      setError('Biometric configuration failed: ' + err.message);
     }
   };
 
@@ -172,6 +183,38 @@ export function Settings({ onBack }) {
 
           {error && <div style={{ color: 'var(--error)', backgroundColor: 'rgba(255,77,77,0.1)', padding: '12px 16px', borderRadius: '10px', fontSize: '0.9rem' }}>{error}</div>}
           {message && <div style={{ color: 'var(--success)', backgroundColor: 'rgba(0,255,136,0.1)', padding: '12px 16px', borderRadius: '10px', fontSize: '0.9rem' }}>{message}</div>}
+
+          {/* Native Biometric Unlock (Android Only) */}
+          {biometricSupported && (
+            <section style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--accent)', padding: '20px', background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.05) 0%, rgba(0, 0, 0, 0) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: 'var(--accent)' }}>Native Biometric Unlock</h3>
+                  <p style={{ margin: '0', fontSize: '0.82rem', color: 'var(--text-dim)' }}>Use your fingerprint/face to unlock locally.</p>
+                </div>
+                <button 
+                  onClick={handleToggleBiometrics}
+                  style={{
+                    width: '56px', height: '32px', borderRadius: '16px',
+                    backgroundColor: biometricEnabled ? 'var(--accent)' : 'var(--border)',
+                    border: 'none', position: 'relative', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    backgroundColor: '#fff', position: 'absolute', top: '4px',
+                    left: biometricEnabled ? '28px' : '4px', transition: 'all 0.3s'
+                  }} />
+                </button>
+              </div>
+              {biometricEnabled && (
+                <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--success)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>✓</span> Hardware-Backed Key Active
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Active keys */}
           <section style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border)', padding: '20px' }}>

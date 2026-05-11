@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useVault } from '../store/vault.jsx';
 import { ItemEditor } from './ItemEditor.jsx';
 import { Settings } from './Settings.jsx';
+import { isBiometricAvailable, isSecureMEKEnrolled, saveSecureMEK } from '../crypto/native-auth.js';
+import { exportMEK } from '../crypto/mek.js';
 
 const IS_ANDROID = Capacitor.getPlatform() === 'android';
 
@@ -10,13 +12,51 @@ const TYPE_ICONS = { entity: '📂', login: '🔑', document: '📄', note: '�
 const TYPE_LABELS = { entity: 'Entity', login: 'Password', document: 'Document', note: 'Note', identity: 'Identity' };
 
 export function Vault() {
-  const { items, logout, deleteItem, identity } = useVault();
+  const { items, logout, deleteItem, identity, mek } = useVault();
   const [editingItem, setEditingItem] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [filterType, setFilterType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [showBiometricPrompt, setShowBiometricPrompt] = useState(false);
+
+  // Check for biometric consent on Android
+  useEffect(() => {
+    if (IS_ANDROID && !showSettings && !editingItem && !isCreating) {
+      const checkBiometrics = async () => {
+        try {
+          const available = await isBiometricAvailable();
+          const stored = await isSecureMEKEnrolled();
+          const asked = localStorage.getItem('vault:biometric_asked');
+          
+          if (available && !stored && !asked) {
+            setShowBiometricPrompt(true);
+          }
+        } catch (e) {
+          console.warn("Biometric check failed:", e);
+        }
+      };
+      checkBiometrics();
+    }
+  }, [showSettings, editingItem, isCreating]);
+
+  const handleEnableBiometric = async () => {
+    try {
+      const exported = await exportMEK(mek);
+      await saveSecureMEK(exported);
+      localStorage.setItem('vault:biometric_asked', 'true');
+      setShowBiometricPrompt(false);
+    } catch (err) {
+      console.error("Failed to enable biometrics:", err);
+      alert("Failed to enable biometric unlock: " + err.message);
+    }
+  };
+
+  const handleDeclineBiometric = () => {
+    localStorage.setItem('vault:biometric_asked', 'true');
+    setShowBiometricPrompt(false);
+  };
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -53,7 +93,8 @@ export function Vault() {
           display: 'flex',
           alignItems: 'center',
           padding: '0 8px 0 16px',
-          height: '64px',
+          minHeight: '64px',
+          height: 'auto',
           backgroundColor: '#000',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
@@ -127,6 +168,38 @@ export function Vault() {
                   }}
                 >✕</button>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Biometric Consent Prompt */}
+        {showBiometricPrompt && (
+          <div className="animate-fade" style={{
+            margin: '16px', padding: '20px',
+            borderRadius: '16px', background: 'linear-gradient(135deg, var(--accent) 0%, #00d4ff 100%)',
+            color: '#000', boxShadow: '0 10px 30px var(--accent-glow)',
+            position: 'relative', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '12px'
+          }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <span style={{ fontSize: '1.5rem' }}>☝️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: '900', fontSize: '1rem' }}>Enable Biometric Unlock?</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: '600', opacity: 0.9 }}>Access your vault instantly using your fingerprint or face. Your key stays in the hardware.</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+              <button 
+                onClick={handleEnableBiometric}
+                style={{ flex: 1, padding: '10px', borderRadius: '10px', backgroundColor: '#000', color: '#fff', border: 'none', fontWeight: '900', fontSize: '0.9rem' }}
+              >
+                Enable Now
+              </button>
+              <button 
+                onClick={handleDeclineBiometric}
+                style={{ flex: 1, padding: '10px', borderRadius: '10px', backgroundColor: 'transparent', color: '#000', border: '1.5px solid #000', fontWeight: '800', fontSize: '0.9rem' }}
+              >
+                Maybe Later
+              </button>
             </div>
           </div>
         )}

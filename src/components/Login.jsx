@@ -3,8 +3,9 @@ import { api, setApiBaseUrl, getApiBaseUrl } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
 import { serializeCredential } from '../crypto/util.js';
 import { authenticatePasskey } from '../crypto/prf.js';
-import { unwrapMEK } from '../crypto/mek.js';
+import { unwrapMEK, exportMEK } from '../crypto/mek.js';
 import { Capacitor } from '@capacitor/core';
+import { isBiometricAvailable, saveSecureMEK, getSecureMEK } from '../crypto/native-auth.js';
 
 export function Login() {
   const [email, setEmail] = useState('');

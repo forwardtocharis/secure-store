@@ -64,14 +64,6 @@ export function VaultProvider({ children }) {
     setMek(newMek);
     await loadIndex(newMek);
     resetTimer(); // Start the clock immediately on unlock
-    
-    // Save to native Keystore if available
-    try {
-      const exported = await exportMEK(newMek);
-      await saveSecureMEK(exported);
-    } catch (err) {
-      console.warn("Could not save MEK natively:", err);
-    }
   };
 
   const logout = () => {
