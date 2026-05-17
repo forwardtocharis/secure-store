@@ -2,9 +2,13 @@ package com.forwardtocharis.securestore;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.IntentSender;
 import android.net.Uri;
 import android.util.Base64;
+
+import androidx.activity.result.ActivityResult;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -24,54 +28,31 @@ import static com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.
 @CapacitorPlugin(name = "DocumentScanner")
 public class DocumentScannerPlugin extends Plugin {
 
-    private static final int DOC_SCAN_REQUEST = 21521;
+    private ActivityResultLauncher<IntentSenderRequest> scanLauncher;
     private PluginCall savedCall;
 
-    @PluginMethod()
-    public void scanDocument(PluginCall call) {
-        this.savedCall = call;
-
-        GmsDocumentScannerOptions options = new GmsDocumentScannerOptions.Builder()
-                .setGalleryImportAllowed(false)
-                .setPageLimit(20)
-                .setResultFormats(RESULT_FORMAT_PDF)
-                .setScannerMode(SCANNER_MODE_FULL)
-                .build();
-
-        GmsDocumentScanning.getClient(options)
-                .getStartScanIntent(getActivity())
-                .addOnSuccessListener(intentSender -> {
-                    try {
-                        getActivity().startIntentSenderForResult(
-                                intentSender, DOC_SCAN_REQUEST, null, 0, 0, 0);
-                    } catch (IntentSender.SendIntentException e) {
-                        savedCall = null;
-                        call.reject("Failed to launch scanner: " + e.getMessage());
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    savedCall = null;
-                    call.reject("Scanner unavailable: " + e.getMessage());
-                });
+    @Override
+    public void load() {
+        scanLauncher = getActivity().registerForActivityResult(
+                new ActivityResultContracts.StartIntentSenderForResult(),
+                this::handleScanResult
+        );
     }
 
-    @Override
-    protected void handleOnActivityResult(int requestCode, int resultCode, Intent data) {
-        super.handleOnActivityResult(requestCode, resultCode, data);
-
-        if (requestCode != DOC_SCAN_REQUEST || savedCall == null) return;
-
+    private void handleScanResult(ActivityResult result) {
+        if (savedCall == null) return;
         PluginCall call = savedCall;
         savedCall = null;
 
-        if (resultCode != Activity.RESULT_OK) {
+        if (result.getResultCode() != Activity.RESULT_OK) {
             call.reject("cancelled");
             return;
         }
 
         try {
-            GmsDocumentScanningResult result = GmsDocumentScanningResult.fromActivityResultIntent(data);
-            GmsDocumentScanningResult.Pdf pdf = result.getPdf();
+            GmsDocumentScanningResult scanResult =
+                    GmsDocumentScanningResult.fromActivityResultIntent(result.getData());
+            GmsDocumentScanningResult.Pdf pdf = scanResult.getPdf();
             Uri pdfUri = pdf.getUri();
 
             InputStream is = getContext().getContentResolver().openInputStream(pdfUri);
@@ -87,5 +68,29 @@ public class DocumentScannerPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Failed to read scan result: " + e.getMessage());
         }
+    }
+
+    @PluginMethod()
+    public void scanDocument(PluginCall call) {
+        this.savedCall = call;
+
+        GmsDocumentScannerOptions options = new GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(false)
+                .setPageLimit(20)
+                .setResultFormats(RESULT_FORMAT_PDF)
+                .setScannerMode(SCANNER_MODE_FULL)
+                .build();
+
+        GmsDocumentScanning.getClient(options)
+                .getStartScanIntent(getActivity())
+                .addOnSuccessListener(intentSender -> {
+                    IntentSenderRequest request =
+                            new IntentSenderRequest.Builder(intentSender).build();
+                    scanLauncher.launch(request);
+                })
+                .addOnFailureListener(e -> {
+                    savedCall = null;
+                    call.reject("Scanner unavailable: " + e.getMessage());
+                });
     }
 }

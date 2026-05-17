@@ -4,7 +4,17 @@
       "Bash(ls -la \"c:\\\\\\\\Coding\\\\\\\\SecureStore\")",
       "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\\\\\\\\src\" -type f -name \"*.js\" -o -name \"*.ts\" -o -name \"*.json\")",
       "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\\\\\\\\worker\" -type f)",
-      "Bash(npx cap *)"
+      "Bash(npx cap *)",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\" -type f -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" -o -name \"*.jsx\" -o -name \"*.java\" -o -name \"*.kt\")",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore\" -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" -o -name \"*.jsx\" \\\\\\))",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore/src\" -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" -o -name \"*.jsx\" \\\\\\))",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore/android\" -type f \\\\\\( -name \"*.java\" -o -name \"*.kt\" \\\\\\))",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore/android\" -type f \\\\\\( -name \"AndroidManifest.xml\" -o -name \"*.gradle\" \\\\\\))",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore/android/app/src/main\" -type f -name \"*.java\")",
+      "Bash(grep -n \"pendingScan\\\\|setScanning\\\\|handleScanDocument\\\\|handleConfirmScan\" \"c:\\\\\\\\Coding\\\\\\\\SecureStore/src/components/ItemEditor.jsx\")",
+      "Bash(grep -n \"onClose\\\\|setEditingItem\\\\|isCreating\" \"c:\\\\\\\\Coding\\\\\\\\SecureStore/src/components/Vault.jsx\")",
+      "Bash(find \"c:\\\\\\\\Coding\\\\\\\\SecureStore/src\" -type f -name \"*.jsx\" -o -name \"*.js\")",
+      "Bash(xargs grep *)"
     ]
   }
 }
