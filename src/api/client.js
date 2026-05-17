@@ -78,20 +78,6 @@ export class VaultAPI {
     });
   }
 
-  async loginPasskey(email, credentialId, assertion) {
-    return this._fetch('/auth/login-passkey', {
-      method: 'POST',
-      body: JSON.stringify({ email, credentialId, assertion })
-    });
-  }
-
-  async registerPasskey(credentialId, publicKey, label) {
-    return this._fetch('/auth/register-passkey', {
-      method: 'POST',
-      body: JSON.stringify({ credentialId, publicKey, label })
-    });
-  }
-
   async verifyAuth(type, credential = null) {
     return this._fetch('/auth/verify', {
       method: 'POST',

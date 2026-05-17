@@ -3,22 +3,23 @@ import { Capacitor } from '@capacitor/core';
 import { api } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
 import { derivePassphraseKey } from '../crypto/passphrase.js';
-import { enrollPasskey } from '../crypto/prf.js';
 import { wrapMEK } from '../crypto/mek.js';
 
-import { isSecureMEKEnrolled, saveSecureMEK, clearSecureMEK, isBiometricAvailable } from '../crypto/native-auth.js';
+import {
+  isSecureMEKEnrolled, saveSecureMEK, clearSecureMEK, isBiometricAvailable,
+  isSecureCredentialsEnrolled, saveSecureCredentials, clearSecureCredentials,
+} from '../crypto/native-auth.js';
 import { exportMEK } from '../crypto/mek.js';
 
 const IS_ANDROID = Capacitor.getPlatform() === 'android';
 
 export function Settings({ onBack }) {
-  const { mek } = useVault();
+  const { mek, identity } = useVault();
   const [keys, setKeys] = useState([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   const [newPassphrase, setNewPassphrase] = useState('');
-  const [passkeyLabel, setPasskeyLabel] = useState('');
   const [newAccountPassword, setNewAccountPassword] = useState('');
 
   const [shareEmail, setShareEmail] = useState('');
@@ -27,6 +28,7 @@ export function Settings({ onBack }) {
   const [recoveryKey, setRecoveryKey] = useState('');
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricSupported, setBiometricSupported] = useState(false);
+  const [credentialsEnrolled, setCredentialsEnrolled] = useState(false);
 
   const loadKeys = async () => {
     try {
@@ -37,11 +39,12 @@ export function Settings({ onBack }) {
     }
   };
 
-  useEffect(() => { 
-    loadKeys(); 
+  useEffect(() => {
+    loadKeys();
     if (IS_ANDROID) {
       isBiometricAvailable().then(setBiometricSupported);
       isSecureMEKEnrolled().then(setBiometricEnabled);
+      isSecureCredentialsEnrolled().then(setCredentialsEnrolled);
     }
   }, []);
 
@@ -61,37 +64,6 @@ export function Settings({ onBack }) {
       });
       setRecoveryKey(hexKey);
       setMessage('Recovery Key generated. COPY THIS NOW!');
-      await loadKeys();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleAddPasskey = async (e) => {
-    e.preventDefault();
-    const label = passkeyLabel || 'New Passkey Device';
-    // credentials.create() must be called immediately within the user gesture —
-    // no state updates or awaits before it, or Chrome silently drops the activation.
-    let enrollResult;
-    try {
-      enrollResult = await enrollPasskey(label);
-    } catch (err) {
-      setError(err.message);
-      return;
-    }
-    try {
-      setError('');
-      setMessage('');
-      const { credential, unwrappingKey } = enrollResult;
-      const wrappedMEK = await wrapMEK(mek, unwrappingKey);
-      const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-      await api.addKey({
-        type: 'prf', credentialId, label, wrappedMEK,
-        iv: btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
-      });
-      await api.registerPasskey(credentialId, 'MOCKED_PUBLIC_KEY', label);
-      setMessage('Passkey enrolled for both Login and Vault Unlock!');
-      setPasskeyLabel('');
       await loadKeys();
     } catch (err) {
       setError(err.message);
@@ -123,10 +95,44 @@ export function Settings({ onBack }) {
       setError('');
       setMessage('');
       await api.changePassword(newAccountPassword);
+      // If credentials are sealed in the Keystore, re-save them with the new
+      // password so the next biometric unlock keeps working.
+      if (IS_ANDROID && credentialsEnrolled && identity?.email) {
+        try {
+          await saveSecureCredentials(JSON.stringify({
+            email: identity.email,
+            password: newAccountPassword,
+          }));
+        } catch (innerErr) {
+          // If re-save fails (user canceled biometric), clear stored credentials
+          // so the stale copy doesn't get used.
+          await clearSecureCredentials().catch(() => {});
+          setCredentialsEnrolled(false);
+          setMessage('Password updated. Biometric login was cleared; sign in once to re-enable it.');
+          setNewAccountPassword('');
+          return;
+        }
+      }
       setMessage('Account password updated successfully');
       setNewAccountPassword('');
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  const handleToggleCredentials = async () => {
+    try {
+      setError('');
+      setMessage('');
+      if (credentialsEnrolled) {
+        await clearSecureCredentials();
+        setCredentialsEnrolled(false);
+        setMessage('Saved login removed from this device.');
+      } else {
+        setMessage('To save credentials, sign out and check "Remember Login" on the next sign-in.');
+      }
+    } catch (err) {
+      setError('Failed to update saved login: ' + err.message);
     }
   };
 
@@ -192,7 +198,7 @@ export function Settings({ onBack }) {
                   <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: 'var(--accent)' }}>Native Biometric Unlock</h3>
                   <p style={{ margin: '0', fontSize: '0.82rem', color: 'var(--text-dim)' }}>Use your fingerprint/face to unlock locally.</p>
                 </div>
-                <button 
+                <button
                   onClick={handleToggleBiometrics}
                   style={{
                     width: '56px', height: '32px', borderRadius: '16px',
@@ -211,6 +217,35 @@ export function Settings({ onBack }) {
               {biometricEnabled && (
                 <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--success)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span>✓</span> Hardware-Backed Key Active
+                </div>
+              )}
+
+              <div style={{ height: '1px', backgroundColor: 'var(--border)', margin: '16px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: 'var(--accent)' }}>Remember Login</h3>
+                  <p style={{ margin: '0', fontSize: '0.82rem', color: 'var(--text-dim)' }}>Skip typing email + password. Sealed by the same biometric.</p>
+                </div>
+                <button
+                  onClick={handleToggleCredentials}
+                  style={{
+                    width: '56px', height: '32px', borderRadius: '16px',
+                    backgroundColor: credentialsEnrolled ? 'var(--accent)' : 'var(--border)',
+                    border: 'none', position: 'relative', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    backgroundColor: '#fff', position: 'absolute', top: '4px',
+                    left: credentialsEnrolled ? '28px' : '4px', transition: 'all 0.3s'
+                  }} />
+                </button>
+              </div>
+              {credentialsEnrolled && (
+                <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--success)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>✓</span> Saved Login Active
                 </div>
               )}
             </section>
@@ -235,15 +270,6 @@ export function Settings({ onBack }) {
                 </div>
               ))}
             </div>
-          </section>
-
-          {/* Enroll Passkey */}
-          <section style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--border)', padding: '20px' }}>
-            <h3 style={{ margin: '0 0 14px', fontSize: '1.05rem' }}>Enroll Passkey</h3>
-            <form onSubmit={handleAddPasskey} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input type="text" placeholder="Device Label" value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} required style={{ width: '100%', padding: '11px 14px' }} />
-              <button type="submit" style={{ backgroundColor: 'var(--accent)', color: '#000', border: 'none', padding: '11px', borderRadius: '10px', fontWeight: '800' }}>Add Passkey</button>
-            </form>
           </section>
 
           {/* Add Passphrase */}
@@ -345,14 +371,6 @@ export function Settings({ onBack }) {
           </section>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
-            <section className="card" style={{ padding: '2rem' }}>
-              <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Enroll Passkey</h3>
-              <form onSubmit={handleAddPasskey} style={{ display: 'flex', gap: '0.75rem' }}>
-                <input type="text" placeholder="Device Label" value={passkeyLabel} onChange={e => setPasskeyLabel(e.target.value)} required style={{ flex: 1 }} />
-                <button type="submit" style={{ backgroundColor: 'var(--accent)', color: '#000', border: 'none', padding: '0.5rem 1.25rem', borderRadius: '10px', fontWeight: '800' }}>Add</button>
-              </form>
-            </section>
-
             <section className="card" style={{ padding: '2rem' }}>
               <h3 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>New Master Passphrase</h3>
               <form onSubmit={handleAddPassphrase} style={{ display: 'flex', gap: '0.75rem' }}>

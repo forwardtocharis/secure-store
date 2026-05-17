@@ -32,18 +32,23 @@ import javax.crypto.spec.GCMParameterSpec;
 @CapacitorPlugin(name = "SecureStorage")
 public class SecureStoragePlugin extends Plugin {
 
-    private static final String TAG                  = "SecureStoreNative";
-    private static final String KEYSTORE_ALIAS       = "securestore_mek_v1";
-    private static final String PREFS_NAME           = "securestore_native";
-    private static final String PREFS_KEY_CIPHERTEXT = "mek_ciphertext";
-    private static final String PREFS_KEY_IV         = "mek_iv";
-    private static final String ANDROID_KEYSTORE     = "AndroidKeyStore";
-    private static final int    GCM_TAG_LENGTH_BITS  = 128;
+    private static final String TAG                       = "SecureStoreNative";
+    private static final String KEYSTORE_ALIAS            = "securestore_mek_v1";
+    private static final String PREFS_NAME                = "securestore_native";
+    private static final String PREFS_KEY_CIPHERTEXT      = "mek_ciphertext";
+    private static final String PREFS_KEY_IV              = "mek_iv";
+    private static final String PREFS_KEY_CREDS_CIPHERTEXT = "creds_ciphertext";
+    private static final String PREFS_KEY_CREDS_IV         = "creds_iv";
+    private static final String ANDROID_KEYSTORE         = "AndroidKeyStore";
+    private static final int    GCM_TAG_LENGTH_BITS      = 128;
 
     private volatile boolean promptActive = false;
-    private PluginCall savedGetCall  = null;
-    private PluginCall savedSaveCall = null;
-    private byte[]     pendingMekBytes = null;
+    private PluginCall savedGetCall          = null;
+    private PluginCall savedSaveCall         = null;
+    private PluginCall savedGetCredsCall     = null;
+    private PluginCall savedSaveCredsCall    = null;
+    private byte[]     pendingMekBytes       = null;
+    private byte[]     pendingCredsBytes     = null;
 
     // -------------------------------------------------------------------------
     // Public plugin methods
@@ -193,6 +198,142 @@ public class SecureStoragePlugin extends Plugin {
             .edit()
             .remove(PREFS_KEY_CIPHERTEXT)
             .remove(PREFS_KEY_IV)
+            .apply();
+        call.resolve();
+    }
+
+    // -------------------------------------------------------------------------
+    // Credentials (email + password) — shares KEYSTORE_ALIAS with MEK
+    // so a single fingerprint enrollment protects both.
+    // -------------------------------------------------------------------------
+
+    @PluginMethod()
+    public void saveCredentials(PluginCall call) {
+        if (promptActive) {
+            Log.w(TAG, "saveCredentials: Biometric prompt already active");
+            call.reject("BIOMETRIC_IN_PROGRESS");
+            return;
+        }
+
+        String credsJson = call.getString("credentials");
+        if (credsJson == null || credsJson.isEmpty()) {
+            Log.e(TAG, "saveCredentials: Missing credentials parameter");
+            call.reject("Missing credentials parameter");
+            return;
+        }
+
+        try {
+            byte[] credsBytes = credsJson.getBytes("UTF-8");
+
+            try {
+                ensureKeystoreKey();
+            } catch (Exception e) {
+                Log.e(TAG, "saveCredentials: Key generation failed", e);
+                call.reject("Key generation failed: " + e.getMessage());
+                return;
+            }
+
+            KeyStore ks = KeyStore.getInstance(ANDROID_KEYSTORE);
+            ks.load(null);
+            SecretKey key = (SecretKey) ks.getKey(KEYSTORE_ALIAS, null);
+
+            if (key == null) {
+                Log.e(TAG, "saveCredentials: SecretKey is null after retrieval");
+                call.reject("SecretKey retrieval failed");
+                return;
+            }
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, key);
+
+            promptActive       = true;
+            pendingCredsBytes  = credsBytes;
+            savedSaveCredsCall = call;
+            call.setKeepAlive(true);
+
+            Log.d(TAG, "saveCredentials: Showing biometric prompt to authorize encryption");
+            showBiometricPromptForSaveCreds(call, new BiometricPrompt.CryptoObject(cipher));
+
+        } catch (Exception e) {
+            Log.e(TAG, "saveCredentials: Unexpected failure", e);
+            call.reject("saveCredentials failed: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod()
+    public void getCredentials(PluginCall call) {
+        if (promptActive) {
+            Log.w(TAG, "getCredentials: Biometric prompt already active");
+            call.reject("BIOMETRIC_IN_PROGRESS");
+            return;
+        }
+
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        String ciphertextB64 = prefs.getString(PREFS_KEY_CREDS_CIPHERTEXT, null);
+        String ivB64         = prefs.getString(PREFS_KEY_CREDS_IV, null);
+
+        if (ciphertextB64 == null || ivB64 == null) {
+            Log.d(TAG, "getCredentials: No stored credentials found");
+            call.resolve();
+            return;
+        }
+
+        byte[] ciphertext = Base64.decode(ciphertextB64, Base64.NO_WRAP);
+        byte[] iv         = Base64.decode(ivB64,         Base64.NO_WRAP);
+
+        try {
+            KeyStore ks = KeyStore.getInstance(ANDROID_KEYSTORE);
+            ks.load(null);
+
+            if (!ks.containsAlias(KEYSTORE_ALIAS)) {
+                Log.e(TAG, "getCredentials: Key alias not found in KeyStore");
+                call.reject("KEY_NOT_FOUND");
+                return;
+            }
+
+            SecretKey key = (SecretKey) ks.getKey(KEYSTORE_ALIAS, null);
+            if (key == null) {
+                Log.e(TAG, "getCredentials: SecretKey is null");
+                call.reject("KEY_RETRIEVAL_FAILED");
+                return;
+            }
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv);
+            cipher.init(Cipher.DECRYPT_MODE, key, spec);
+
+            promptActive       = true;
+            call.setKeepAlive(true);
+            savedGetCredsCall  = call;
+
+            Log.d(TAG, "getCredentials: Showing biometric prompt");
+            showBiometricPromptForGetCreds(call, new BiometricPrompt.CryptoObject(cipher), ciphertext);
+
+        } catch (KeyPermanentlyInvalidatedException e) {
+            Log.w(TAG, "getCredentials: Key permanently invalidated (biometrics changed)");
+            handleKeyInvalidatedCreds(call);
+        } catch (Exception e) {
+            Log.e(TAG, "getCredentials: Initialization failed", e);
+            call.reject("getCredentials init failed: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod()
+    public void hasCredentials(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        boolean stored = prefs.getString(PREFS_KEY_CREDS_CIPHERTEXT, null) != null;
+        JSObject ret = new JSObject();
+        ret.put("enrolled", stored);
+        call.resolve(ret);
+    }
+
+    @PluginMethod()
+    public void clearCredentials(PluginCall call) {
+        getContext()
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(PREFS_KEY_CREDS_CIPHERTEXT)
+            .remove(PREFS_KEY_CREDS_IV)
             .apply();
         call.resolve();
     }
@@ -372,6 +513,141 @@ public class SecureStoragePlugin extends Plugin {
         promptActive = false;
         savedGetCall = null;
         call.reject("KEY_INVALIDATED");
+    }
+
+    private void handleKeyInvalidatedCreds(PluginCall call) {
+        try {
+            KeyStore ks = KeyStore.getInstance(ANDROID_KEYSTORE);
+            ks.load(null);
+            ks.deleteEntry(KEYSTORE_ALIAS);
+        } catch (Exception ignored) {}
+
+        getContext()
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().clear().apply();
+
+        promptActive = false;
+        savedGetCredsCall = null;
+        call.reject("KEY_INVALIDATED");
+    }
+
+    private void showBiometricPromptForGetCreds(PluginCall call,
+                                                BiometricPrompt.CryptoObject cryptoObject,
+                                                byte[] ciphertext) {
+        getActivity().runOnUiThread(() -> {
+            Executor executor = ContextCompat.getMainExecutor(getContext());
+
+            BiometricPrompt prompt = new BiometricPrompt(
+                (FragmentActivity) getActivity(),
+                executor,
+                new BiometricPrompt.AuthenticationCallback() {
+
+                    @Override
+                    public void onAuthenticationSucceeded(
+                            @NonNull BiometricPrompt.AuthenticationResult result) {
+                        promptActive      = false;
+                        savedGetCredsCall = null;
+                        call.setKeepAlive(false);
+                        try {
+                            Cipher cipher = result.getCryptoObject().getCipher();
+                            byte[] plaintext = cipher.doFinal(ciphertext);
+                            JSObject ret = new JSObject();
+                            ret.put("credentials", new String(plaintext, "UTF-8"));
+                            call.resolve(ret);
+                        } catch (Exception e) {
+                            call.reject("Decryption failed: " + e.getMessage(), e);
+                        }
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode,
+                                                      @NonNull CharSequence errString) {
+                        promptActive      = false;
+                        savedGetCredsCall = null;
+                        call.setKeepAlive(false);
+                        call.reject("BIOMETRIC_ERROR:" + errorCode + ":" + errString);
+                    }
+
+                    @Override
+                    public void onAuthenticationFailed() {
+                        // BiometricPrompt handles retry UI automatically.
+                    }
+                }
+            );
+
+            BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Sign in to SecureStore")
+                .setSubtitle("Authenticate to access your saved login")
+                .setNegativeButtonText("Use Password")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build();
+
+            prompt.authenticate(promptInfo, cryptoObject);
+        });
+    }
+
+    private void showBiometricPromptForSaveCreds(PluginCall call,
+                                                 BiometricPrompt.CryptoObject cryptoObject) {
+        getActivity().runOnUiThread(() -> {
+            Executor executor = ContextCompat.getMainExecutor(getContext());
+
+            BiometricPrompt prompt = new BiometricPrompt(
+                (FragmentActivity) getActivity(),
+                executor,
+                new BiometricPrompt.AuthenticationCallback() {
+
+                    @Override
+                    public void onAuthenticationSucceeded(
+                            @NonNull BiometricPrompt.AuthenticationResult result) {
+                        promptActive       = false;
+                        savedSaveCredsCall = null;
+                        call.setKeepAlive(false);
+                        try {
+                            Cipher cipher     = result.getCryptoObject().getCipher();
+                            byte[] iv         = cipher.getIV();
+                            byte[] ciphertext = cipher.doFinal(pendingCredsBytes);
+                            pendingCredsBytes = null;
+
+                            getContext()
+                                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                .edit()
+                                .putString(PREFS_KEY_CREDS_CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+                                .putString(PREFS_KEY_CREDS_IV,         Base64.encodeToString(iv,         Base64.NO_WRAP))
+                                .apply();
+
+                            call.resolve();
+                        } catch (Exception e) {
+                            Log.e(TAG, "saveCredentials: Encryption failed after auth", e);
+                            call.reject("Encryption failed: " + e.getMessage(), e);
+                        }
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode,
+                                                      @NonNull CharSequence errString) {
+                        promptActive       = false;
+                        savedSaveCredsCall = null;
+                        pendingCredsBytes  = null;
+                        call.setKeepAlive(false);
+                        call.reject("BIOMETRIC_ERROR:" + errorCode + ":" + errString);
+                    }
+
+                    @Override
+                    public void onAuthenticationFailed() {
+                        // BiometricPrompt handles retry UI automatically.
+                    }
+                }
+            );
+
+            BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Remember Sign-In")
+                .setSubtitle("Confirm biometric to save your login on this device")
+                .setNegativeButtonText("Cancel")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build();
+
+            prompt.authenticate(promptInfo, cryptoObject);
+        });
     }
 
     private String biometricStatusString(int status) {

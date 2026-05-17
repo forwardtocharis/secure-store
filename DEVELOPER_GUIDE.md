@@ -109,9 +109,9 @@ SecureStore uses a **Single-Tenant Shared Storage** model by design.
 ## 9. Appendix: Known Security Caveats (MVP State)
 The current implementation includes several trade-offs that should be addressed before wider exposure:
 
-1.  **Plaintext Layer 1 Passwords**: Backend currently stores/compares login passwords in plaintext.
-2.  **Mock Passkey Verification**: WebAuthn signature verification is currently bypassed in the worker.
-3.  **Mock Biometric Prompt**: The Android client auto-unlocks after a mocked 500ms delay rather than a real biometric challenge.
+1.  **Plaintext Layer 1 Passwords**: Backend currently stores/compares login passwords in plaintext. *(Note: PBKDF2 hashing with one-time migration is now in place — see `worker/lib/password.js`. This caveat is largely closed but worth re-auditing.)*
+2.  **Passkey Login Endpoints Disabled (410 Gone)**: The previous `/api/auth/login-passkey` and `/api/auth/register-passkey` endpoints did not perform real WebAuthn assertion / attestation verification (registration stored the literal string `'MOCKED_PUBLIC_KEY'`). They are now disabled and return HTTP 410 Gone. Re-enabling requires real verification (e.g. `@simplewebauthn/server`) plus a persistent challenge store. The current accepted threat model is documented in `BiometricPlanReview.md` — single-tenant, private deployment, server obscurity, with Cloudflare edge protection as the baseline. Confidentiality of vault data is unaffected (the MEK is the real lock).
+3.  **Android Biometric is `BiometricPrompt` + Keystore, not WebAuthn**: A common terminology trap. The Android "biometric unlock" is a hardware-backed AES key in the Android Keystore (`SecureStoragePlugin.java`), not a passkey. On Android, the same Keystore key now also seals stored login credentials so the user can sign in with one tap. See `NATIVE_BIOMETRIC_TRANSITION.md` for details.
 
 ---
 

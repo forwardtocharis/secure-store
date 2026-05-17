@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { api, setApiBaseUrl, getApiBaseUrl } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
-import { serializeCredential } from '../crypto/util.js';
-import { authenticatePasskey } from '../crypto/prf.js';
-import { unwrapMEK, exportMEK } from '../crypto/mek.js';
 import { Capacitor } from '@capacitor/core';
-import { isBiometricAvailable, saveSecureMEK, getSecureMEK } from '../crypto/native-auth.js';
+import {
+  isBiometricAvailable,
+  isSecureCredentialsEnrolled,
+  getSecureCredentials,
+  saveSecureCredentials,
+  clearSecureCredentials,
+} from '../crypto/native-auth.js';
+
+const IS_ANDROID = Capacitor.getPlatform() === 'android';
+const REMEMBER_DECLINED_KEY = 'vault:credentials_asked';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -14,11 +20,52 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [serverUrl, setServerUrl] = useState(() => getApiBaseUrl());
+
+  // Android-only state for the biometric-credential path.
+  const [credsEnrolled, setCredsEnrolled] = useState(false);
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [showRememberPrompt, setShowRememberPrompt] = useState(false);
+  const [pendingCredentials, setPendingCredentials] = useState(null);
+  const [forcePasswordForm, setForcePasswordForm] = useState(false);
+
   const { loginIdentity } = useVault();
+
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const [available, enrolled] = await Promise.all([
+          isBiometricAvailable(),
+          isSecureCredentialsEnrolled(),
+        ]);
+        if (mounted) {
+          setBiometricSupported(available);
+          setCredsEnrolled(enrolled);
+        }
+      } catch (e) {
+        console.warn('Credential availability check failed:', e);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const handleSaveServer = () => {
     setApiBaseUrl(serverUrl);
     setShowSettings(false);
+  };
+
+  const completeLogin = async (creds) => {
+    const { token, email: userEmail, wrappedKeys: keys } = await api.login(creds.email, creds.password);
+    // On Android, offer to remember credentials after first successful login —
+    // unless they're already stored or the user previously declined.
+    const declined = IS_ANDROID && localStorage.getItem(REMEMBER_DECLINED_KEY) === 'true';
+    if (IS_ANDROID && biometricSupported && !credsEnrolled && !declined) {
+      setPendingCredentials({ ...creds, token, userEmail, keys });
+      setShowRememberPrompt(true);
+      return;
+    }
+    await loginIdentity(token, userEmail, null, keys);
   };
 
   const handleSubmit = async (e) => {
@@ -27,9 +74,7 @@ export function Login() {
     setLoading(true);
     try {
       console.log(`[LOGIN ATTEMPT] Email: ${email}, API_BASE: ${getApiBaseUrl()}`);
-      const { token, email: userEmail, wrappedKeys: keys } = await api.login(email, password);
-      console.log(`[LOGIN SUCCESS] User: ${userEmail}`);
-      loginIdentity(token, userEmail, null, keys);
+      await completeLogin({ email, password });
     } catch (err) {
       console.error(`[LOGIN FAILED]`, err);
       setError(err.message || 'Login failed');
@@ -38,47 +83,138 @@ export function Login() {
     }
   };
 
-  const handlePasskeyLogin = async () => {
-    console.log("handlePasskeyLogin triggered");
+  const handleUnlockWithStored = async () => {
     setError('');
     setLoading(true);
     try {
-      // 1. Get combined assertion + PRF secret
-      const { assertion, unwrappingKey } = await authenticatePasskey(
-        null, // Use resident key lookup
-        async () => {
-          const res = await api.getChallenge();
-          return Uint8Array.from(atob(res.challenge), c => c.charCodeAt(0));
-        }
-      );
-
-      const credentialId = btoa(String.fromCharCode(...new Uint8Array(assertion.rawId)));
-      const serializedAssertion = serializeCredential(assertion);
-      
-      // 2. Login with backend (now returns keys too)
-      const { token, email: userEmail, wrappedKeys } = await api.loginPasskey(email || null, credentialId, serializedAssertion);
-      
-      // 3. Try to auto-unlock if PRF is supported
-      let autoMek = null;
-      if (unwrappingKey && wrappedKeys) {
-        const prfKeyData = wrappedKeys.find(k => k.type === 'prf' && k.credentialId === credentialId);
-        if (prfKeyData) {
-          try {
-            autoMek = await unwrapMEK(prfKeyData.wrappedMEK, unwrappingKey);
-            console.log("Single-Tap Unlock Success!");
-          } catch (err) {
-            console.warn("Single-Tap PRF unwrap failed (likely domain mismatch), falling back to Layer 1 login.", err);
-          }
+      const json = await getSecureCredentials();
+      if (!json) {
+        // Stored credentials disappeared (e.g. cleared elsewhere); fall back.
+        setCredsEnrolled(false);
+        setForcePasswordForm(true);
+        return;
+      }
+      const stored = JSON.parse(json);
+      try {
+        const { token, email: userEmail, wrappedKeys: keys } = await api.login(stored.email, stored.password);
+        await loginIdentity(token, userEmail, null, keys);
+      } catch (apiErr) {
+        // 401 → stored credentials are stale (password changed elsewhere).
+        if (/invalid credentials/i.test(apiErr.message) || apiErr.message?.includes('401')) {
+          await clearSecureCredentials().catch(() => {});
+          setCredsEnrolled(false);
+          setForcePasswordForm(true);
+          setEmail(stored.email || '');
+          setError('Your saved credentials are out of date. Please sign in again.');
+        } else {
+          throw apiErr;
         }
       }
-
-      await loginIdentity(token, userEmail, autoMek, wrappedKeys);
     } catch (err) {
-      setError('Passkey login failed: ' + err.message);
+      if (err.message?.includes('KEY_INVALIDATED')) {
+        setCredsEnrolled(false);
+        setForcePasswordForm(true);
+        setError('Your biometrics changed. Sign in with your password to re-enable biometric login.');
+      } else if (err.message?.includes('BIOMETRIC_ERROR')) {
+        // User canceled — leave them on this screen, no error message needed.
+      } else {
+        setError(err.message || 'Biometric unlock failed');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAcceptRemember = async () => {
+    if (!pendingCredentials) return;
+    setLoading(true);
+    try {
+      await saveSecureCredentials(JSON.stringify({
+        email: pendingCredentials.email,
+        password: pendingCredentials.password,
+      }));
+      setCredsEnrolled(true);
+      localStorage.removeItem(REMEMBER_DECLINED_KEY);
+      const { token, userEmail, keys } = pendingCredentials;
+      setShowRememberPrompt(false);
+      setPendingCredentials(null);
+      await loginIdentity(token, userEmail, null, keys);
+    } catch (err) {
+      // Biometric canceled or failed — proceed with login anyway.
+      const { token, userEmail, keys } = pendingCredentials;
+      setShowRememberPrompt(false);
+      setPendingCredentials(null);
+      await loginIdentity(token, userEmail, null, keys);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeclineRemember = async () => {
+    if (!pendingCredentials) return;
+    localStorage.setItem(REMEMBER_DECLINED_KEY, 'true');
+    const { token, userEmail, keys } = pendingCredentials;
+    setShowRememberPrompt(false);
+    setPendingCredentials(null);
+    await loginIdentity(token, userEmail, null, keys);
+  };
+
+  // -------------------------------------------------------------------------
+  // Render branches
+  // -------------------------------------------------------------------------
+
+  // Android "Remember credentials?" modal — shown after successful first login.
+  if (showRememberPrompt) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center',
+        padding: '2rem', backgroundColor: 'var(--bg-deep)'
+      }}>
+        <div className="animate-fade card" style={{ width: '100%', maxWidth: 420, textAlign: 'center' }}>
+          <div style={{
+            fontSize: '3.5rem', marginBottom: '1.5rem',
+            display: 'inline-block', padding: '1.25rem',
+            borderRadius: '50%', backgroundColor: 'rgba(0, 212, 255, 0.05)',
+            border: '1px solid var(--accent)'
+          }}>
+            ☝️
+          </div>
+          <h2 style={{ margin: '0 0 1rem', fontSize: '1.5rem' }}>Remember Login on This Device?</h2>
+          <p style={{ color: 'var(--text-dim)', marginBottom: '2rem', fontSize: '1rem' }}>
+            Sign in with your fingerprint next time. Your credentials are sealed in the same
+            hardware key that protects your vault.
+          </p>
+          <button
+            onClick={handleAcceptRemember}
+            disabled={loading}
+            style={{
+              width: '100%', padding: '1.1rem', borderRadius: '12px',
+              backgroundColor: 'var(--accent)', color: 'var(--text-on-accent)', border: 'none',
+              fontWeight: '900', fontSize: '1.05rem', marginBottom: '0.75rem',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            Yes, Remember
+          </button>
+          <button
+            onClick={handleDeclineRemember}
+            disabled={loading}
+            style={{
+              width: '100%', padding: '1.1rem', borderRadius: '12px',
+              backgroundColor: 'transparent', color: 'var(--text-dim)',
+              border: '1px solid var(--border)', fontWeight: '700', fontSize: '0.95rem',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            Not Now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Android with stored credentials → single "Unlock" button.
+  const showStoredUnlock = IS_ANDROID && credsEnrolled && !forcePasswordForm;
 
   return (
     <div style={{
@@ -95,9 +231,9 @@ export function Login() {
         maxWidth: 420,
         textAlign: 'center'
       }}>
-        <div style={{ 
-          fontSize: '4rem', marginBottom: '2rem', 
-          display: 'inline-block', padding: '1.5rem', 
+        <div style={{
+          fontSize: '4rem', marginBottom: '2rem',
+          display: 'inline-block', padding: '1.5rem',
           borderRadius: '50%', backgroundColor: 'rgba(0, 212, 255, 0.05)',
           boxShadow: '0 0 50px var(--accent-glow)',
           border: '1px solid var(--accent)'
@@ -105,99 +241,135 @@ export function Login() {
           🛡️
         </div>
         <h1 style={{ margin: '0 0 0.75rem', color: 'var(--accent)', fontSize: '2.5rem', fontWeight: '900' }}>SecureStore</h1>
-        <p style={{ color: 'var(--text-dim)', marginBottom: '3rem', fontSize: '1.1rem' }}>Please log in to access your vault.</p>
-        
-        <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>EMAIL / USERNAME</label>
-            <input
-              type="text"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="admin"
-              required
+        <p style={{ color: 'var(--text-dim)', marginBottom: '3rem', fontSize: '1.1rem' }}>
+          {showStoredUnlock ? 'Tap to sign in with your biometric.' : 'Please log in to access your vault.'}
+        </p>
+
+        {error && (
+          <div style={{
+            color: 'var(--error)',
+            backgroundColor: 'rgba(255,77,77,0.1)',
+            padding: '1rem',
+            borderRadius: '10px',
+            marginBottom: '1.5rem',
+            fontSize: '0.95rem',
+            textAlign: 'center',
+            border: '1px solid rgba(255,77,77,0.2)'
+          }}>
+            {error}
+          </div>
+        )}
+
+        {showStoredUnlock ? (
+          <>
+            <button
+              type="button"
+              onClick={handleUnlockWithStored}
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '1.25rem',
-                fontSize: '1.1rem'
+                borderRadius: '14px',
+                border: 'none',
+                backgroundColor: 'var(--accent)',
+                color: 'var(--text-on-accent)',
+                fontWeight: '900',
+                fontSize: '1.1rem',
+                cursor: 'pointer',
+                opacity: loading ? 0.7 : 1,
+                marginBottom: '1rem',
+                boxShadow: '0 10px 30px var(--accent-glow)'
               }}
-            />
-          </div>
-          <div style={{ marginBottom: '2.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>PASSWORD</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
+            >
+              {loading ? 'Authenticating...' : 'Unlock with Biometric'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setForcePasswordForm(true); setError(''); }}
+              disabled={loading}
               style={{
-                width: '100%',
-                padding: '1.25rem',
-                fontSize: '1.1rem'
+                width: '100%', padding: '0.9rem', borderRadius: '10px',
+                border: '1px solid var(--border)', backgroundColor: 'transparent',
+                color: 'var(--text-dim)', fontWeight: '700', fontSize: '0.9rem',
+                opacity: loading ? 0.7 : 1
               }}
-            />
-          </div>
-          
-          {error && (
-            <div style={{ 
-              color: 'var(--error)', 
-              backgroundColor: 'rgba(255,77,77,0.1)', 
-              padding: '1rem', 
-              borderRadius: '10px', 
-              marginBottom: '1.5rem', 
-              fontSize: '0.95rem', 
-              textAlign: 'center',
-              border: '1px solid rgba(255,77,77,0.2)'
-            }}>
-              {error}
+            >
+              Sign in with Password
+            </button>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>EMAIL / USERNAME</label>
+              <input
+                type="text"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="admin"
+                required
+                style={{
+                  width: '100%',
+                  padding: '1.25rem',
+                  fontSize: '1.1rem'
+                }}
+              />
             </div>
-          )}
+            <div style={{ marginBottom: '2.5rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.6rem', fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>PASSWORD</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                style={{
+                  width: '100%',
+                  padding: '1.25rem',
+                  fontSize: '1.1rem'
+                }}
+              />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '1.25rem',
-              borderRadius: '14px',
-              border: 'none',
-              backgroundColor: 'var(--accent)',
-              color: 'var(--text-on-accent)',
-              fontWeight: '900',
-              fontSize: '1.1rem',
-              cursor: 'pointer',
-              opacity: loading ? 0.7 : 1,
-              transition: 'all 0.2s',
-              marginBottom: '1rem',
-              boxShadow: '0 10px 30px var(--accent-glow)'
-            }}
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '1.25rem',
+                borderRadius: '14px',
+                border: 'none',
+                backgroundColor: 'var(--accent)',
+                color: 'var(--text-on-accent)',
+                fontWeight: '900',
+                fontSize: '1.1rem',
+                cursor: 'pointer',
+                opacity: loading ? 0.7 : 1,
+                transition: 'all 0.2s',
+                marginBottom: '1rem',
+                boxShadow: '0 10px 30px var(--accent-glow)'
+              }}
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
 
-          <button
-            type="button"
-            onClick={handlePasskeyLogin}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '1.25rem',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              backgroundColor: 'transparent',
-              color: 'var(--accent)',
-              fontWeight: '800',
-              fontSize: '1rem',
-              cursor: 'pointer',
-              opacity: loading ? 0.7 : 1,
-              transition: 'all 0.2s'
-            }}
-          >
-            Sign in with Passkey
-          </button>
-        </form>
-        
+            {IS_ANDROID && credsEnrolled && forcePasswordForm && (
+              <button
+                type="button"
+                onClick={() => { setForcePasswordForm(false); setError(''); }}
+                disabled={loading}
+                style={{
+                  width: '100%', padding: '0.9rem', borderRadius: '10px',
+                  border: '1px solid var(--border)', backgroundColor: 'transparent',
+                  color: 'var(--text-dim)', fontWeight: '700', fontSize: '0.9rem',
+                  opacity: loading ? 0.7 : 1
+                }}
+              >
+                ← Use Biometric Instead
+              </button>
+            )}
+          </form>
+        )}
+
         <div style={{ marginTop: '2rem', borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
           {Capacitor.isNativePlatform() && (
             showSettings ? (
