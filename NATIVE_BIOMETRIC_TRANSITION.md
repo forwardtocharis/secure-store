@@ -58,3 +58,37 @@ Enable seamless, hardware-secured vault unlocking on Android using biometrics, b
 - [ ] **5.2 Web Regression Test**: Ensure no Android-specific logic has leaked into the Web bundle or affected its PRF flow.
 
 **✅ Criteria for Completion**: Full interoperability confirmed between Android and Web clients.
+
+---
+
+## 🔑 Phase 6: Stored-Credential Sign-In (Android One-Tap Login)
+**Goal**: After a one-time email+password entry, every subsequent launch on
+Android is a single biometric tap.
+
+### Design
+- **Layer 1 stays email+password.** No backend changes. The Cloudflare Worker free plan dictated avoiding heavyweight WebAuthn server libraries.
+- **Stored credentials are sealed in the same Android Keystore key (`KEYSTORE_ALIAS = "securestore_mek_v1"`) that already protects the MEK.** One fingerprint enrollment protects both blobs; re-enrolling fingerprints invalidates both atomically (existing `handleKeyInvalidated` behavior).
+- **Two SharedPreferences keys, one Keystore key.**
+  - `mek_ciphertext` / `mek_iv` — existing MEK blob.
+  - `creds_ciphertext` / `creds_iv` — new credentials blob (JSON of `{email, password}`).
+
+### Plugin surface (`SecureStoragePlugin.java`)
+- `saveCredentials({ credentials: string })` — biometric-gated encrypt + persist.
+- `getCredentials()` — biometric-gated decrypt, returns `{ credentials: string }` or `null`.
+- `hasCredentials()` — synchronous SharedPreferences check, returns `{ enrolled: boolean }`.
+- `clearCredentials()` — wipes the credentials blob (Keystore key remains).
+
+### Client flow (`Login.jsx`)
+1. Mount: check `isSecureCredentialsEnrolled()`.
+2. If enrolled → render single **"Unlock with Biometric"** button.
+3. If not enrolled → render the email+password form.
+4. After successful first login → modal: "Remember Login on This Device?"
+5. Subsequent launches → biometric (credentials) → silent server login → JWT → Unlock screen → biometric (MEK) → vault. Two biometric prompts, no typing.
+
+### Lifecycle change (revises Phase 4.2)
+- `vault.jsx` `logout()` **no longer wipes the Keystore-sealed MEK.** Auto-lock and explicit logout preserve both the MEK and credential blobs so biometric re-unlock keeps working across sessions. The previous behavior wiped biometric setup on every auto-lock, which defeated the feature's purpose. To revoke either, use the corresponding toggle in Settings.
+
+### Disabled endpoints (related)
+- The mocked `/api/auth/login-passkey` and `/api/auth/register-passkey` endpoints now return HTTP 410 Gone. They were not real WebAuthn verifiers and never produced records that could be verified (`publicKey` was always the literal string `'MOCKED_PUBLIC_KEY'`). The "Sign in with Passkey" buttons have been removed from both web and Android clients. Real WebAuthn server-side verification is deferred — out of scope for the Cloudflare free plan; the accepted threat model is documented in `DEVELOPER_GUIDE.md` §9.
+
+**✅ Status**: COMPLETED. Single-tap biometric sign-in active on Android.

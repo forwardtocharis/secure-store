@@ -1,9 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { api } from '../api/client.js';
 import { decryptVaultItem, encryptVaultItem } from '../crypto/vault.js';
-import { exportMEK } from '../crypto/mek.js';
-import { saveSecureMEK, clearSecureMEK } from '../crypto/native-auth.js';
-
 const VaultContext = createContext(null);
 
 const INACTIVITY_LIMIT = 10 * 60 * 1000; // 10 minutes
@@ -74,9 +71,9 @@ export function VaultProvider({ children }) {
     setMek(null);
     setItems([]);
     if (activityTimeoutRef.current) clearTimeout(activityTimeoutRef.current);
-    
-    // Clear from native Keystore
-    clearSecureMEK().catch(e => console.warn(e));
+    // Note: the Keystore-sealed MEK and stored credentials are intentionally
+    // preserved across logout / auto-lock so biometric re-unlock keeps working.
+    // To revoke them, use the toggles in Settings.
   };
 
   const loadIndex = async (currentMek = mek) => {

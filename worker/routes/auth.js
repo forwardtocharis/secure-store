@@ -43,42 +43,18 @@ auth.post('/login', async (c) => {
   return c.json({ token, email: user.email, wrappedKeys });
 });
 
-// POST /api/auth/login-passkey
+// POST /api/auth/login-passkey — disabled.
+// Previously issued a JWT to anyone presenting a known credentialId without
+// verifying a signature, so it was not real authentication. Re-enabling
+// requires a real WebAuthn assertion verifier (e.g. @simplewebauthn/server)
+// and persistent challenges; see plan in repo history.
 auth.post('/login-passkey', async (c) => {
-  const { email, credentialId } = await c.req.json();
-  const users = await getUsers(c.env.KV);
-
-  let user = users.find(u => u.email === email);
-  if (!user) {
-    user = users.find(u => u.passkeys && u.passkeys.some(pk => pk.credentialId === credentialId));
-  }
-
-  if (!user) {
-    return c.json({ error: 'User not found or passkey not recognized' }, 401);
-  }
-
-  const passkey = user.passkeys.find(pk => pk.credentialId === credentialId);
-  if (!passkey) {
-    return c.json({ error: 'Invalid passkey' }, 401);
-  }
-
-  // Note: cryptographic proof of possession is the client-side MEK unwrap via PRF.
-  // The server's role is identity resolution and JWT issuance only.
-
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-  const token = await new SignJWT({ sub: user.id, email: user.email })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setExpirationTime('2h')
-    .sign(secret);
-
-  const wrappedKeys = await getWrappedKeys(c.env.KV, user.id);
-  return c.json({ token, email: user.email, wrappedKeys });
+  return c.json({ error: 'Passkey login is disabled. Use email and password.' }, 410);
 });
 
 // All following routes require the Layer 1 JWT
 auth.use('/verify', verifySession);
 auth.use('/change-password', verifySession);
-auth.use('/register-passkey', verifySession);
 
 // POST /api/auth/verify - The "Unlock" authorization (Layer 2)
 auth.post('/verify', passphraseRateLimit, async (c) => {
@@ -110,29 +86,13 @@ auth.post('/change-password', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/auth/register-passkey
+// POST /api/auth/register-passkey — disabled.
+// The previous handler stored a client-supplied "publicKey" string without
+// verifying any attestation, so the stored records (all "MOCKED_PUBLIC_KEY")
+// were unusable for real verification. Re-enabling requires
+// verifyRegistrationResponse + persistent challenges.
 auth.post('/register-passkey', async (c) => {
-  const { credentialId, publicKey, label } = await c.req.json();
-  const payload = c.get('jwtPayload');
-  const userId = payload.sub;
-
-  const users = await getUsers(c.env.KV);
-  const userIndex = users.findIndex(u => u.id === userId);
-
-  if (userIndex === -1) {
-    return c.json({ error: 'User not found' }, 404);
-  }
-
-  if (!users[userIndex].passkeys) users[userIndex].passkeys = [];
-
-  if (users[userIndex].passkeys.find(pk => pk.credentialId === credentialId)) {
-    return c.json({ error: 'Passkey already registered' }, 400);
-  }
-
-  users[userIndex].passkeys.push({ credentialId, publicKey, label });
-  await saveUsers(c.env.KV, users);
-
-  return c.json({ success: true });
+  return c.json({ error: 'Passkey registration is disabled.' }, 410);
 });
 
 auth.post('/challenge', async (c) => {

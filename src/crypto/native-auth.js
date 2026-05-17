@@ -52,3 +52,44 @@ export async function clearSecureMEK() {
   if (!Capacitor.isNativePlatform()) return;
   await SecureStorage.clearMEK();
 }
+
+// ---------------------------------------------------------------------------
+// Stored login credentials (email + password) — sealed in the same Android
+// Keystore key as the MEK so a single fingerprint enrollment protects both.
+// Used only on Android; web returns false / null silently.
+// ---------------------------------------------------------------------------
+
+export async function saveSecureCredentials(credentialsJson) {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    await SecureStorage.saveCredentials({ credentials: credentialsJson });
+    return true;
+  } catch (err) {
+    console.error('[BIOMETRIC] Failed to save credentials natively:', err);
+    throw err;
+  }
+}
+
+export async function isSecureCredentialsEnrolled() {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const { enrolled } = await SecureStorage.hasCredentials();
+    return enrolled === true;
+  } catch {
+    return false;
+  }
+}
+
+// Triggers BiometricPrompt and returns the decrypted credentials JSON string.
+// Returns null if nothing is stored. Throws KEY_INVALIDATED / BIOMETRIC_ERROR
+// in the same pattern as getSecureMEK.
+export async function getSecureCredentials() {
+  if (!Capacitor.isNativePlatform()) return null;
+  const result = await SecureStorage.getCredentials();
+  return result?.credentials ?? null;
+}
+
+export async function clearSecureCredentials() {
+  if (!Capacitor.isNativePlatform()) return;
+  await SecureStorage.clearCredentials();
+}
