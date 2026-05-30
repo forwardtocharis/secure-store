@@ -33,6 +33,10 @@ auth.post('/login', async (c) => {
     await saveUsers(c.env.KV, users);
   }
 
+  if (!c.env.JWT_SECRET) {
+    return c.json({ error: 'Internal server error: missing JWT secret' }, 500);
+  }
+
   const secret = new TextEncoder().encode(c.env.JWT_SECRET);
   const token = await new SignJWT({ sub: user.id, email: user.email })
     .setProtectedHeader({ alg: 'HS256' })

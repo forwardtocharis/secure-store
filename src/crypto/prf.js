@@ -7,7 +7,7 @@ new TextEncoder().encodeInto("vault-prf-v1-fixed-salt-32-bytes", PRF_SALT);
 
 // In a Capacitor Android WebView, location.hostname is 'localhost', which fails
 // RP ID validation. Use the actual production domain when running natively.
-const RP_ID = Capacitor.isNativePlatform() ? 'secure-store.pages.dev' : location.hostname;
+const RP_ID = Capacitor.isNativePlatform() ? 'secure-store.pages.dev' : (typeof location !== 'undefined' ? location.hostname : 'localhost');
 
 export async function enrollPasskey(label) {
   console.log("enrollPasskey: starting, RP_ID =", RP_ID);
