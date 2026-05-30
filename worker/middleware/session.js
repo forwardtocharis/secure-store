@@ -1,5 +1,7 @@
 import { jwtVerify } from 'jose';
 
+const encoder = new TextEncoder();
+
 export async function verifySession(c, next) {
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -11,7 +13,7 @@ export async function verifySession(c, next) {
   if (!c.env.JWT_SECRET) {
     return c.json({ error: 'Internal server error: missing JWT secret' }, 500);
   }
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET);
+  const secret = encoder.encode(c.env.JWT_SECRET);
 
   try {
     const { payload } = await jwtVerify(token, secret);
