@@ -100,3 +100,57 @@ test('key isolation: User A cannot see User B\'s keys', async () => {
   assert.strictEqual(resB[0].id, 'key-b');
   assert.strictEqual(resB.length, 1);
 });
+
+test('auth login route fails when JWT_SECRET is missing', async () => {
+  const route = auth.routes.find(r => r.path === '/login' && r.method === 'POST');
+  const handler = route.handler;
+
+  const mockUsers = [{
+    id: 'user-id',
+    email: 'test@example.com',
+    // Mock valid password, using pbkdf2 prefix for password verification test
+    password: 'pbkdf2:100000:00000000000000000000000000000000:0000000000000000000000000000000000000000000000000000000000000000'
+  }];
+
+  const c = {
+    req: {
+      json: async () => ({ email: 'test@example.com', password: 'password123' })
+    },
+    res: { status: 200 },
+    env: {
+        KV: {
+            get: async (key) => {
+                if (key === 'vault:users') return JSON.stringify(mockUsers);
+                return null;
+            },
+            put: async () => {},
+            delete: async () => {}
+        }
+    },
+    json: (data, status) => {
+        c.res.status = status || 200;
+        return { status: c.res.status, body: data };
+    }
+  };
+
+  // A valid pbkdf2 hash for 'password123' to pass the password verification step
+  // and reach the JWT generation step where the error is thrown.
+  const hashedPassword = 'pbkdf2:100000:5e09614a43bb7530f14950bdb09b7f2a:3aff6f24e4ee4053e2b06a4fe599b34fa0e3088c1c202efe545fe129b476eeed';
+
+  // Re-define mock KV get to use the dynamically hashed password
+  c.env.KV.get = async (key, type) => {
+    if (key === 'vault:users') {
+      const data = [{
+        id: 'user-id',
+        email: 'test@example.com',
+        password: hashedPassword
+      }];
+      return type === 'json' ? data : JSON.stringify(data);
+    }
+    return null;
+  };
+
+  const res = await handler(c);
+  assert.strictEqual(res.status, 500);
+  assert.strictEqual(res.body.error, 'Internal server error: missing JWT secret');
+});
