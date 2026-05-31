@@ -16,6 +16,7 @@ export async function verifySession(c, next) {
   const secret = encoder.encode(c.env.JWT_SECRET);
 
   try {
+    // Enforce HS256 algorithm to prevent unrestricted signature algorithm vulnerabilities
     const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
     c.set('jwtPayload', payload);
     await next();

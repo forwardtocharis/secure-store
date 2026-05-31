@@ -154,3 +154,40 @@ test('auth login route fails when JWT_SECRET is missing', async () => {
   assert.strictEqual(res.status, 500);
   assert.strictEqual(res.body.error, 'Internal server error: missing JWT secret');
 });
+
+test('verifySession rejects token not signed with HS256 algorithm', async () => {
+  const { SignJWT } = await import('jose');
+  const encoder = new TextEncoder();
+
+  // Create a symmetric key for HS512 (to simulate an attack where a different algorithm is used)
+  const secret = encoder.encode('my-super-secret-jwt-key-that-is-long-enough');
+
+  // Sign with HS512 instead of HS256
+  const maliciousToken = await new SignJWT({ sub: 'user-id' })
+    .setProtectedHeader({ alg: 'HS512' })
+    .setExpirationTime('2h')
+    .sign(secret);
+
+  const c = {
+    req: {
+      header: (name) => {
+        if (name === 'Authorization') return `Bearer ${maliciousToken}`;
+        return null;
+      }
+    },
+    env: { JWT_SECRET: 'my-super-secret-jwt-key-that-is-long-enough' },
+    json: (data, status) => {
+      return { data, status, body: data };
+    },
+    set: () => {}
+  };
+
+  let nextCalled = false;
+  const next = async () => { nextCalled = true; };
+
+  const res = await verifySession(c, next);
+
+  assert.strictEqual(nextCalled, false, 'next() should not be called');
+  assert.strictEqual(res.status, 401);
+  assert.strictEqual(res.body.error, 'Invalid or expired token');
+});
