@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getWrappedKeys, saveWrappedKeys } from '../lib/kv.js';
 import { verifySession } from '../middleware/session.js';
+import { getUsers } from '../lib/users.js';
 
 const keys = new Hono();
 
@@ -50,7 +51,6 @@ keys.post('/share', async (c) => {
   }
 
   // 1. Find the target user by email
-  const { getUsers } = await import('../lib/users.js');
   const users = await getUsers(c.env.KV);
   const targetUser = users.find(u => u.email === targetEmail);
 
