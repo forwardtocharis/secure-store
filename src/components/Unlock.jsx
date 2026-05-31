@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../api/client.js';
 import { useVault } from '../store/vault.jsx';
 import { authenticatePasskey } from '../crypto/prf.js';
