@@ -16,7 +16,7 @@ export async function verifySession(c, next) {
   const secret = encoder.encode(c.env.JWT_SECRET);
 
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
     c.set('jwtPayload', payload);
     await next();
   } catch (err) {
