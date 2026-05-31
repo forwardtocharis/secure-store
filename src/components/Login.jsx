@@ -73,7 +73,6 @@ export function Login() {
     setError('');
     setLoading(true);
     try {
-      console.log(`[LOGIN ATTEMPT] Email: ${email}, API_BASE: ${getApiBaseUrl()}`);
       await completeLogin({ email, password });
     } catch (err) {
       console.error(`[LOGIN FAILED]`, err);
