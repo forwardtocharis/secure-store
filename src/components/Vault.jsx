@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useVault } from '../store/vault.jsx';
 import { ItemEditor } from './ItemEditor.jsx';
