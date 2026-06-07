@@ -20,6 +20,25 @@ test('base64Encode correctly encodes buffers to base64 strings', () => {
   // Empty buffer
   const emptyBuffer = new Uint8Array([]).buffer;
   assert.strictEqual(base64Encode(emptyBuffer), '', 'Encodes empty buffer correctly');
+
+  // Buffer with all 0s
+  const zerosBuffer = new Uint8Array([0, 0, 0]).buffer;
+  const expectedZeros = 'AAAA';
+  assert.strictEqual(base64Encode(zerosBuffer), expectedZeros, 'Encodes buffer with all 0s correctly');
+
+  // Buffer with all 255s
+  const maxBuffer = new Uint8Array([255, 255, 255]).buffer;
+  const expectedMax = '////';
+  assert.strictEqual(base64Encode(maxBuffer), expectedMax, 'Encodes buffer with all 255s correctly');
+
+  // Large payload
+  const largeArray = new Uint8Array(10000);
+  for (let i = 0; i < largeArray.length; i++) {
+    largeArray[i] = i % 256;
+  }
+  const largeBase64 = base64Encode(largeArray.buffer);
+  assert.strictEqual(typeof largeBase64, 'string', 'Encodes large payload to a string');
+  assert.strictEqual(largeBase64.length > 0, true, 'Encodes large payload to non-empty string');
 });
 
 test('base64urlEncode correctly encodes buffers to base64url strings', () => {
