@@ -71,8 +71,9 @@ export function Vault() {
       if (item.type === 'login') acc.logins++;
       else if (item.type === 'document') acc.docs++;
       else if (item.type === 'note') acc.notes++;
+      else if (item.type === 'entity') acc.entities++;
       return acc;
-    }, { total: items.length, logins: 0, docs: 0, notes: 0 });
+    }, { total: items.length, logins: 0, docs: 0, notes: 0, entities: 0 });
   }, [items]);
 
   if (showSettings) return <Settings onBack={() => setShowSettings(false)} />;
@@ -309,7 +310,7 @@ export function Vault() {
 
         <nav style={{ flex: 1 }}>
           <SidebarItem label="All Items" icon="📦" active={filterType === 'all'} onClick={() => setFilterType('all')} count={stats.total} />
-          <SidebarItem label="Entities" icon="📂" active={filterType === 'entity'} onClick={() => setFilterType('entity')} count={items.filter(i => i.type === 'entity').length} />
+          <SidebarItem label="Entities" icon="📂" active={filterType === 'entity'} onClick={() => setFilterType('entity')} count={stats.entities} />
           <SidebarItem label="Passwords" icon="🔑" active={filterType === 'login'} onClick={() => setFilterType('login')} count={stats.logins} />
           <SidebarItem label="Documents" icon="📄" active={filterType === 'document'} onClick={() => setFilterType('document')} count={stats.docs} />
           <SidebarItem label="Notes" icon="📝" active={filterType === 'note'} onClick={() => setFilterType('note')} count={stats.notes} />
