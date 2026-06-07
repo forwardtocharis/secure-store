@@ -4,7 +4,7 @@ import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
 // import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
-import { base64Decode } from '../src/crypto/util.js';
+import { base64Decode, serializeCredential } from '../src/crypto/util.js';
 
 test('base64Decode correctly decodes base64 strings', () => {
   // "Hello" in base64 is "SGVsbG8="
@@ -138,4 +138,45 @@ test('Vault item encryption and decryption', async () => {
 
   const decrypted = await decryptVaultItem(mek, stored);
   assert.deepStrictEqual(decrypted, item, 'Decrypted item matches original');
+});
+
+test('serializeCredential correctly serializes a credential', () => {
+  const cred = {
+    id: "cred-123",
+    type: "public-key",
+    rawId: new Uint8Array([1, 2, 3, 4]).buffer,
+    response: {
+      clientDataJSON: new Uint8Array([5, 6, 7, 8]).buffer,
+    }
+  };
+
+  const serialized = serializeCredential(cred);
+
+  assert.strictEqual(serialized.id, "cred-123");
+  assert.strictEqual(serialized.type, "public-key");
+  assert.strictEqual(serialized.rawId, "AQIDBA");
+  assert.strictEqual(serialized.response.clientDataJSON, "BQYHCA");
+  assert.strictEqual(serialized.response.attestationObject, undefined);
+  assert.strictEqual(serialized.response.authenticatorData, undefined);
+  assert.strictEqual(serialized.response.signature, undefined);
+  assert.strictEqual(serialized.response.userHandle, undefined);
+
+  // With optional fields
+  const credOptional = {
+    ...cred,
+    response: {
+      ...cred.response,
+      attestationObject: new Uint8Array([9, 10, 11, 12]).buffer,
+      authenticatorData: new Uint8Array([13, 14, 15, 16]).buffer,
+      signature: new Uint8Array([17, 18, 19, 20]).buffer,
+      userHandle: new Uint8Array([21, 22, 23, 24]).buffer,
+    }
+  };
+
+  const serializedOptional = serializeCredential(credOptional);
+
+  assert.strictEqual(serializedOptional.response.attestationObject, "CQoLDA");
+  assert.strictEqual(serializedOptional.response.authenticatorData, "DQ4PEA");
+  assert.strictEqual(serializedOptional.response.signature, "ERITFA");
+  assert.strictEqual(serializedOptional.response.userHandle, "FRYXGA");
 });
