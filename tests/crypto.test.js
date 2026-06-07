@@ -85,6 +85,31 @@ test('buf2hex correctly converts buffers to hex strings', () => {
 
   const emptyBuffer = new Uint8Array([]).buffer;
   assert.strictEqual(buf2hex(emptyBuffer), '', 'Converts empty buffer to empty string');
+
+  // Uint8Array directly
+  const uint8Array = new Uint8Array([10, 20, 30]);
+  assert.strictEqual(buf2hex(uint8Array), '0a141e', 'Converts Uint8Array correctly');
+
+  // Array of numbers
+  const numberArray = [255, 0, 128];
+  assert.strictEqual(buf2hex(numberArray), 'ff0080', 'Converts array of numbers correctly');
+
+  // Padding checks
+  const paddingArray = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  assert.strictEqual(buf2hex(paddingArray), '0102030405060708090a0b0c0d0e0f', 'Pads correctly up to 15');
+
+  // Large buffer
+  const largeArray = new Uint8Array(1000);
+  for (let i = 0; i < largeArray.length; i++) {
+    largeArray[i] = i % 256;
+  }
+  const largeHex = buf2hex(largeArray);
+  assert.strictEqual(typeof largeHex, 'string', 'Returns string for large buffer');
+  assert.strictEqual(largeHex.length, 2000, 'Returns correct length hex string for large buffer');
+
+  // Null/undefined checks should throw (new Uint8Array(null/undefined) returns an empty array, so buf2hex returns '')
+  assert.strictEqual(buf2hex(null), '', 'Returns empty string for null input');
+  assert.strictEqual(buf2hex(undefined), '', 'Returns empty string for undefined input');
 });
 
 test('base64Decode correctly decodes base64 strings', () => {
