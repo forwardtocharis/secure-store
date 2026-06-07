@@ -59,10 +59,27 @@ test('base64Decode correctly decodes base64 strings', () => {
   const expectedHello = new Uint8Array([72, 101, 108, 108, 111]);
   assert.deepStrictEqual(helloDecoded, expectedHello, 'Decodes "Hello" correctly');
 
+  // Unpadded base64 string "Hello"
+  const helloDecodedUnpadded = base64Decode('SGVsbG8');
+  assert.deepStrictEqual(helloDecodedUnpadded, expectedHello, 'Decodes unpadded "Hello" correctly');
+
   // "Hello, World!" in base64 is "SGVsbG8sIFdvcmxkIQ=="
   const helloWorldDecoded = base64Decode('SGVsbG8sIFdvcmxkIQ==');
   const expectedHelloWorld = new Uint8Array([72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33]);
   assert.deepStrictEqual(helloWorldDecoded, expectedHelloWorld, 'Decodes "Hello, World!" correctly');
+
+  // Whitespace handling "SGVsbG8=" -> "SGVsbG8= "
+  const whitespaceDecoded = base64Decode(' SGVsbG8= \n');
+  assert.deepStrictEqual(whitespaceDecoded, expectedHello, 'Decodes string with whitespace correctly');
+
+  // Large payload
+  const largeArray = new Uint8Array(10000);
+  for (let i = 0; i < largeArray.length; i++) {
+    largeArray[i] = i % 256;
+  }
+  const largeBase64 = base64Encode(largeArray.buffer);
+  const largeDecoded = base64Decode(largeBase64);
+  assert.deepStrictEqual(largeDecoded, largeArray, 'Decodes large payload correctly');
 
   // Empty string
   const emptyDecoded = base64Decode('');
