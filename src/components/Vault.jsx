@@ -66,12 +66,14 @@ export function Vault() {
     });
   }, [items, filterType, searchQuery]);
 
-  const stats = useMemo(() => ({
-    total: items.length,
-    logins: items.filter(i => i.type === 'login').length,
-    docs: items.filter(i => i.type === 'document').length,
-    notes: items.filter(i => i.type === 'note').length,
-  }), [items]);
+  const stats = useMemo(() => {
+    return items.reduce((acc, item) => {
+      if (item.type === 'login') acc.logins++;
+      else if (item.type === 'document') acc.docs++;
+      else if (item.type === 'note') acc.notes++;
+      return acc;
+    }, { total: items.length, logins: 0, docs: 0, notes: 0 });
+  }, [items]);
 
   if (showSettings) return <Settings onBack={() => setShowSettings(false)} />;
 
