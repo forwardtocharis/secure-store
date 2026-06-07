@@ -81,15 +81,6 @@ auth.post('/change-password', async (c) => {
   return c.json({ success: true });
 });
 
-// POST /api/auth/register-passkey — disabled.
-// The previous handler stored a client-supplied "publicKey" string without
-// verifying any attestation, so the stored records (all "MOCKED_PUBLIC_KEY")
-// were unusable for real verification. Re-enabling requires
-// verifyRegistrationResponse + persistent challenges.
-auth.post('/register-passkey', async (c) => {
-  return c.json({ error: 'Passkey registration is disabled.' }, 410);
-});
-
 auth.post('/challenge', async (c) => {
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const challengeBase64 = btoa(String.fromCharCode(...challenge));
