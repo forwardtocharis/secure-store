@@ -4,6 +4,23 @@ import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
 // import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
+import { base64Decode } from '../src/crypto/util.js';
+
+test('base64Decode correctly decodes base64 strings', () => {
+  // "Hello" in base64 is "SGVsbG8="
+  const helloDecoded = base64Decode('SGVsbG8=');
+  const expectedHello = new Uint8Array([72, 101, 108, 108, 111]);
+  assert.deepStrictEqual(helloDecoded, expectedHello, 'Decodes "Hello" correctly');
+
+  // "Hello, World!" in base64 is "SGVsbG8sIFdvcmxkIQ=="
+  const helloWorldDecoded = base64Decode('SGVsbG8sIFdvcmxkIQ==');
+  const expectedHelloWorld = new Uint8Array([72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33]);
+  assert.deepStrictEqual(helloWorldDecoded, expectedHelloWorld, 'Decodes "Hello, World!" correctly');
+
+  // Empty string
+  const emptyDecoded = base64Decode('');
+  assert.deepStrictEqual(emptyDecoded, new Uint8Array([]), 'Decodes empty string correctly');
+});
 
 test('MEK generation, wrapping and unwrapping with AES-KW', async () => {
   const mek = await generateMEK();
