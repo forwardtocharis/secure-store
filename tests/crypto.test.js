@@ -4,7 +4,54 @@ import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
 // import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
-import { base64Decode, serializeCredential } from '../src/crypto/util.js';
+import { base64Encode, base64Decode, base64urlEncode, base64urlDecode, serializeCredential, buf2hex } from '../src/crypto/util.js';
+
+test('base64Encode correctly encodes buffers to base64 strings', () => {
+  // "Hello" in base64 is "SGVsbG8="
+  const helloBuffer = new Uint8Array([72, 101, 108, 108, 111]).buffer;
+  const expectedHello = 'SGVsbG8=';
+  assert.strictEqual(base64Encode(helloBuffer), expectedHello, 'Encodes "Hello" correctly');
+
+  // "Hello, World!" in base64 is "SGVsbG8sIFdvcmxkIQ=="
+  const helloWorldBuffer = new Uint8Array([72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33]).buffer;
+  const expectedHelloWorld = 'SGVsbG8sIFdvcmxkIQ==';
+  assert.strictEqual(base64Encode(helloWorldBuffer), expectedHelloWorld, 'Encodes "Hello, World!" correctly');
+
+  // Empty buffer
+  const emptyBuffer = new Uint8Array([]).buffer;
+  assert.strictEqual(base64Encode(emptyBuffer), '', 'Encodes empty buffer correctly');
+});
+
+test('base64urlEncode correctly encodes buffers to base64url strings', () => {
+  // Use a buffer that produces '+' and '/' in normal base64 to ensure they are replaced
+  // [255, 239] produces "/+8=" in base64
+  const testBuffer = new Uint8Array([255, 239]).buffer;
+  const expectedBase64url = '_-8';
+  assert.strictEqual(base64urlEncode(testBuffer), expectedBase64url, 'Encodes and replaces + / and removes =');
+
+  const helloBuffer = new Uint8Array([72, 101, 108, 108, 111]).buffer;
+  const expectedHello = 'SGVsbG8'; // SGVsbG8= without =
+  assert.strictEqual(base64urlEncode(helloBuffer), expectedHello, 'Encodes "Hello" correctly without padding');
+});
+
+test('base64urlDecode correctly decodes base64url strings to buffers', () => {
+  const base64urlStr = '_-8';
+  const decoded = base64urlDecode(base64urlStr);
+  const expectedBuffer = new Uint8Array([255, 239]);
+  assert.deepStrictEqual(decoded, expectedBuffer, 'Decodes base64url string with - and _ correctly');
+
+  const helloDecoded = base64urlDecode('SGVsbG8'); // SGVsbG8 without =
+  const expectedHello = new Uint8Array([72, 101, 108, 108, 111]);
+  assert.deepStrictEqual(helloDecoded, expectedHello, 'Decodes unpadded base64url string correctly');
+});
+
+test('buf2hex correctly converts buffers to hex strings', () => {
+  const testBuffer = new Uint8Array([0, 15, 16, 255]).buffer;
+  assert.strictEqual(buf2hex(testBuffer), '000f10ff', 'Converts buffer to hex correctly');
+
+  const emptyBuffer = new Uint8Array([]).buffer;
+  assert.strictEqual(buf2hex(emptyBuffer), '', 'Converts empty buffer to empty string');
+});
 
 test('base64Decode correctly decodes base64 strings', () => {
   // "Hello" in base64 is "SGVsbG8="
