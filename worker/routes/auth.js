@@ -47,15 +47,6 @@ auth.post('/login', async (c) => {
   return c.json({ token, email: user.email, wrappedKeys });
 });
 
-// POST /api/auth/login-passkey — disabled.
-// Previously issued a JWT to anyone presenting a known credentialId without
-// verifying a signature, so it was not real authentication. Re-enabling
-// requires a real WebAuthn assertion verifier (e.g. @simplewebauthn/server)
-// and persistent challenges; see plan in repo history.
-auth.post('/login-passkey', async (c) => {
-  return c.json({ error: 'Passkey login is disabled. Use email and password.' }, 410);
-});
-
 // All following routes require the Layer 1 JWT
 auth.use('/verify', verifySession);
 auth.use('/change-password', verifySession);
