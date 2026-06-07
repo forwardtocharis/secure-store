@@ -4,7 +4,45 @@ import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
 // import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
-import { base64Decode, serializeCredential } from '../src/crypto/util.js';
+import { base64Decode, base64urlDecode, base64urlEncode, buf2hex, serializeCredential } from '../src/crypto/util.js';
+
+test('base64urlDecode correctly decodes base64url strings', () => {
+  // Test with padding needed (e.g. "SGVsbG8" -> "SGVsbG8=")
+  const helloDecoded = base64urlDecode('SGVsbG8');
+  const expectedHello = new Uint8Array([72, 101, 108, 108, 111]);
+  assert.deepStrictEqual(helloDecoded, expectedHello, 'Decodes "SGVsbG8" correctly');
+
+  // Test with characters that differ from standard base64 (- and _)
+  // "~~~" in base64url is "fn5-"
+  const tildesDecoded = base64urlDecode('fn5-');
+  const expectedTildes = new Uint8Array([126, 126, 126]);
+  assert.deepStrictEqual(tildesDecoded, expectedTildes, 'Decodes "fn5-" correctly');
+
+  // "???" in base64url is "Pz8_"
+  const questionMarksDecoded = base64urlDecode('Pz8_');
+  const expectedQuestionMarks = new Uint8Array([63, 63, 63]);
+  assert.deepStrictEqual(questionMarksDecoded, expectedQuestionMarks, 'Decodes "Pz8_" correctly');
+});
+
+test('base64urlEncode correctly encodes ArrayBuffers', () => {
+  const helloBuffer = new Uint8Array([72, 101, 108, 108, 111]).buffer;
+  const helloEncoded = base64urlEncode(helloBuffer);
+  assert.strictEqual(helloEncoded, 'SGVsbG8', 'Encodes "Hello" without padding');
+
+  const tildesBuffer = new Uint8Array([126, 126, 126]).buffer;
+  const tildesEncoded = base64urlEncode(tildesBuffer);
+  assert.strictEqual(tildesEncoded, 'fn5-', 'Encodes with - instead of +');
+
+  const questionMarksBuffer = new Uint8Array([63, 63, 63]).buffer;
+  const questionMarksEncoded = base64urlEncode(questionMarksBuffer);
+  assert.strictEqual(questionMarksEncoded, 'Pz8_', 'Encodes with _ instead of /');
+});
+
+test('buf2hex correctly converts buffers to hex strings', () => {
+  const buffer = new Uint8Array([0, 15, 16, 255]).buffer;
+  const hex = buf2hex(buffer);
+  assert.strictEqual(hex, '000f10ff', 'Converts buffer to zero-padded hex string');
+});
 
 test('base64Decode correctly decodes base64 strings', () => {
   // "Hello" in base64 is "SGVsbG8="
@@ -186,4 +224,20 @@ test('serializeCredential correctly serializes a credential', () => {
   assert.strictEqual(serializedOptional.response.authenticatorData, "DQ4PEA");
   assert.strictEqual(serializedOptional.response.signature, "ERITFA");
   assert.strictEqual(serializedOptional.response.userHandle, "FRYXGA");
+
+  // With some optional fields missing
+  const credSomeMissing = {
+    ...cred,
+    response: {
+      ...cred.response,
+      attestationObject: new Uint8Array([9, 10, 11, 12]).buffer,
+      userHandle: new Uint8Array([21, 22, 23, 24]).buffer,
+    }
+  };
+
+  const serializedSomeMissing = serializeCredential(credSomeMissing);
+  assert.strictEqual(serializedSomeMissing.response.attestationObject, "CQoLDA");
+  assert.strictEqual(serializedSomeMissing.response.authenticatorData, undefined);
+  assert.strictEqual(serializedSomeMissing.response.signature, undefined);
+  assert.strictEqual(serializedSomeMissing.response.userHandle, "FRYXGA");
 });
