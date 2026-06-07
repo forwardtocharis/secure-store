@@ -33,7 +33,7 @@ app.get('/', (c) => c.text('Vault Worker Running'));
 
 app.onError((err, c) => {
   console.error(err);
-  return c.json({ error: err.message }, 500);
+  return c.json({ error: 'Internal Server Error' }, 500);
 });
 
 export default app;
