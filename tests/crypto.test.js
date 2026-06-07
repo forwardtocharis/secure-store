@@ -4,7 +4,7 @@ import { generateMEK, wrapMEK, unwrapMEK } from '../src/crypto/mek.js';
 import { encryptVaultItem, decryptVaultItem } from '../src/crypto/vault.js';
 // import { derivePassphraseKey } from '../src/crypto/passphrase.js';
 import { derivePRFKey } from '../src/crypto/prf.js';
-import { base64Decode, serializeCredential } from '../src/crypto/util.js';
+import { base64Decode, serializeCredential, buf2hex } from '../src/crypto/util.js';
 
 test('base64Decode correctly decodes base64 strings', () => {
   // "Hello" in base64 is "SGVsbG8="
@@ -186,4 +186,22 @@ test('serializeCredential correctly serializes a credential', () => {
   assert.strictEqual(serializedOptional.response.authenticatorData, "DQ4PEA");
   assert.strictEqual(serializedOptional.response.signature, "ERITFA");
   assert.strictEqual(serializedOptional.response.userHandle, "FRYXGA");
+});
+
+test('buf2hex correctly converts buffers to hex strings', () => {
+  // Empty buffer
+  const empty = new Uint8Array([]).buffer;
+  assert.strictEqual(buf2hex(empty), '', 'Converts empty buffer');
+
+  // Single zero byte
+  const zero = new Uint8Array([0]).buffer;
+  assert.strictEqual(buf2hex(zero), '00', 'Converts single zero byte');
+
+  // Bytes needing padding
+  const paddingNeeded = new Uint8Array([15, 1, 10]).buffer;
+  assert.strictEqual(buf2hex(paddingNeeded), '0f010a', 'Pads bytes with leading zeros');
+
+  // Diverse bytes
+  const diverse = new Uint8Array([255, 16, 0, 1, 128, 254]).buffer;
+  assert.strictEqual(buf2hex(diverse), 'ff10000180fe', 'Converts diverse bytes');
 });
