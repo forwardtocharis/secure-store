@@ -32,6 +32,21 @@ test('base64urlEncode correctly encodes buffers to base64url strings', () => {
   const helloBuffer = new Uint8Array([72, 101, 108, 108, 111]).buffer;
   const expectedHello = 'SGVsbG8'; // SGVsbG8= without =
   assert.strictEqual(base64urlEncode(helloBuffer), expectedHello, 'Encodes "Hello" correctly without padding');
+
+  // Empty buffer
+  const emptyBuffer = new Uint8Array([]).buffer;
+  assert.strictEqual(base64urlEncode(emptyBuffer), '', 'Encodes empty buffer correctly');
+
+  // Buffer producing multiple '+' and '/' and '='
+  // [251, 239, 191] produces "+++/" in base64
+  const multipleReplacementsBuffer = new Uint8Array([251, 239, 191]).buffer;
+  const expectedMultipleBase64url = '---_';
+  assert.strictEqual(base64urlEncode(multipleReplacementsBuffer), expectedMultipleBase64url, 'Encodes and replaces multiple + and / correctly');
+
+  // [255, 255, 255, 255, 255, 255] produces "////////" in base64
+  const multipleSlashesBuffer = new Uint8Array([255, 255, 255, 255, 255, 255]).buffer;
+  const expectedMultipleSlashesBase64url = '________';
+  assert.strictEqual(base64urlEncode(multipleSlashesBuffer), expectedMultipleSlashesBase64url, 'Encodes and replaces multiple / correctly');
 });
 
 test('base64urlDecode correctly decodes base64url strings to buffers', () => {
