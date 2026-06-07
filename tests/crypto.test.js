@@ -20,6 +20,13 @@ test('base64Decode correctly decodes base64 strings', () => {
   // Empty string
   const emptyDecoded = base64Decode('');
   assert.deepStrictEqual(emptyDecoded, new Uint8Array([]), 'Decodes empty string correctly');
+
+  // Invalid base64 string
+  assert.throws(
+    () => base64Decode('!@#'),
+    (err) => err instanceof Error && err.name === 'InvalidCharacterError',
+    'Throws error for invalid base64 string'
+  );
 });
 
 test('MEK generation, wrapping and unwrapping with AES-KW', async () => {
