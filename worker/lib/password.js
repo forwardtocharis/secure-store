@@ -71,10 +71,21 @@ function hexToBuf(hex) {
 
 // Constant-time string comparison to prevent timing attacks
 function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  const aLen = a.length;
+  const bLen = b.length;
+
+  if (aLen === 0) {
+    return bLen === 0;
   }
+
+  const diffLength = aLen ^ bLen;
+  let diff = diffLength;
+
+  const b_safe = (diffLength === 0) ? b : a;
+
+  for (let i = 0; i < aLen; i++) {
+    diff |= a.charCodeAt(i) ^ b_safe.charCodeAt(i);
+  }
+
   return diff === 0;
 }
