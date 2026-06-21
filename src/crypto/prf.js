@@ -30,22 +30,10 @@ export async function enrollPasskey(label) {
 
   const abortController = new AbortController();
   createOptions.signal = abortController.signal;
-  console.log("enrollPasskey: calling navigator.credentials.create(). Origin:", location.origin);
-  console.log("enrollPasskey: [DEBUG] createOptions:", JSON.parse(JSON.stringify(createOptions, (k, v) => {
-    if (v instanceof Uint8Array) return Array.from(v);
-    if (v instanceof ArrayBuffer) return Array.from(new Uint8Array(v));
-    return v;
-  })));
 
   let credential;
   try {
     credential = await navigator.credentials.create(createOptions);
-    console.log("enrollPasskey: [DEBUG] RAW credential object:", credential);
-    console.log("enrollPasskey: [DEBUG] credential.constructor.name:", credential?.constructor?.name);
-    console.log("enrollPasskey: [DEBUG] typeof getClientExtensionResults:", typeof credential?.getClientExtensionResults);
-    if (typeof credential?.getClientExtensionResults === 'function') {
-      console.log("enrollPasskey: [DEBUG] getClientExtensionResults() output:", credential.getClientExtensionResults());
-    }
   } catch (err) {
     console.error("enrollPasskey: credentials.create() threw:", {
       name: err.name,
@@ -56,20 +44,11 @@ export async function enrollPasskey(label) {
     throw err;
   }
 
-  console.log("enrollPasskey: credential created", credential?.type, credential?.id);
-
   const extensionResults = typeof credential.getClientExtensionResults === 'function'
     ? credential.getClientExtensionResults()
     : (credential.clientExtensionResults ?? {});
   
   const prfOutput = extensionResults?.prf?.results?.first;
-  
-  console.log("enrollPasskey: PRF extension results summary:", {
-    fullResults: extensionResults,
-    prf: extensionResults?.prf,
-    enabled: extensionResults?.prf?.enabled,
-    hasOutput: !!prfOutput,
-  });
 
   if (!prfOutput) {
     console.error("enrollPasskey: PRF output MISSING. Extension results were:", extensionResults);
@@ -81,12 +60,7 @@ export async function enrollPasskey(label) {
 }
 
 export async function authenticatePasskey(credentialId, fetchChallenge) {
-  console.log("Starting Passkey Authentication...", {
-    credentialId, RP_ID, hostname: location.hostname,
-  });
-
   const challenge = await fetchChallenge();
-  console.log("Challenge received from server:", challenge);
 
   // Always send the PRF extension — browsers/authenticators that don't support
   // it will simply ignore it. Gating on getClientCapabilities() was causing it
@@ -109,12 +83,6 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     options.publicKey.allowCredentials = [{ type: "public-key", id: base64urlDecode(credentialId) }];
   }
 
-  console.log("Requesting navigator.credentials.get with options:", JSON.parse(JSON.stringify(options, (key, value) => {
-    if (value instanceof Uint8Array) return `Uint8Array(${value.length})`;
-    if (value instanceof ArrayBuffer) return `ArrayBuffer(${value.byteLength})`;
-    return value;
-  })));
-
   const abortController = new AbortController();
   options.signal = abortController.signal;
 
@@ -130,13 +98,10 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
     throw new Error("No credential returned. The passkey prompt may have been dismissed.");
   }
 
-  console.log("Assertion received from authenticator.");
-
   const extensionResults = typeof assertion.getClientExtensionResults === 'function'
     ? assertion.getClientExtensionResults()
     : (assertion.clientExtensionResults ?? {});
   const prfOutput = extensionResults?.prf?.results?.first;
-  console.log("PRF extension results:", { hasPrf: !!extensionResults?.prf, hasResults: !!extensionResults?.prf?.results, hasOutput: !!prfOutput });
 
   if (!prfOutput) {
     console.warn("PRF output missing. Proceeding with Layer 1 login only.");
