@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 
-let API_BASE = (Capacitor.isNativePlatform() ? localStorage.getItem('vault:server') : null) || import.meta.env.VITE_API_BASE || '/api';
+let API_BASE = (Capacitor.isNativePlatform() ? localStorage.getItem('vault:server') : null) || import.meta.env?.VITE_API_BASE || '/api';
 
 export function setApiBaseUrl(url) {
   if (url) {
@@ -9,7 +9,7 @@ export function setApiBaseUrl(url) {
       localStorage.setItem('vault:server', url);
     }
   } else {
-    API_BASE = import.meta.env.VITE_API_BASE || '/api';
+    API_BASE = import.meta.env?.VITE_API_BASE || '/api';
     if (Capacitor.isNativePlatform()) {
       localStorage.removeItem('vault:server');
     }

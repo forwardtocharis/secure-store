@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { VaultAPI } from '../src/api/client.js';
+import { VaultAPI, getApiBaseUrl, setApiBaseUrl } from '../src/api/client.js';
+import { Capacitor } from '@capacitor/core';
+
+// Mock localStorage globally
+let mockStorage = {};
+global.localStorage = {
+  getItem: (key) => mockStorage[key] || null,
+  setItem: (key, value) => { mockStorage[key] = value; },
+  removeItem: (key) => { delete mockStorage[key]; }
+};
 
 // Mock fetch globally for node environment
 global.fetch = async (url, options) => {
@@ -60,4 +69,37 @@ test('VaultAPI injects token into requests', async () => {
   const api = new VaultAPI('mock-jwt');
   const res = await api.getIndex();
   assert.strictEqual(res.iv, 'iv');
+});
+
+test('getApiBaseUrl returns the expected API base URL', async () => {
+  assert.strictEqual(typeof getApiBaseUrl(), 'string');
+});
+
+test('setApiBaseUrl sets URL memory and handles native localStorage correctly', async () => {
+  // Clear mockStorage
+  mockStorage = {};
+  const originalIsNative = Capacitor.isNativePlatform;
+
+  // Test web behavior
+  Capacitor.isNativePlatform = () => false;
+  setApiBaseUrl('https://web.test.local');
+  assert.strictEqual(getApiBaseUrl(), 'https://web.test.local');
+  assert.strictEqual(global.localStorage.getItem('vault:server'), null);
+
+  setApiBaseUrl(null);
+  assert.strictEqual(getApiBaseUrl(), '/api');
+  assert.strictEqual(global.localStorage.getItem('vault:server'), null);
+
+  // Test native behavior
+  Capacitor.isNativePlatform = () => true;
+  setApiBaseUrl('https://native.test.local');
+  assert.strictEqual(getApiBaseUrl(), 'https://native.test.local');
+  assert.strictEqual(global.localStorage.getItem('vault:server'), 'https://native.test.local');
+
+  setApiBaseUrl(null);
+  assert.strictEqual(getApiBaseUrl(), '/api');
+  assert.strictEqual(global.localStorage.getItem('vault:server'), null);
+
+  // Restore Capacitor mock
+  Capacitor.isNativePlatform = originalIsNative;
 });
