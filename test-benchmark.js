@@ -44,10 +44,6 @@ function benchmark() {
     }, { total: items.length, logins: 0, docs: 0, notes: 0, entities: 0 });
   }
   const endProposed = performance.now();
-
-  console.log(`Baseline (multiple filters): ${endBaseline - startBaseline}ms`);
-  console.log(`Current reduce: ${endCurrentReduce - startCurrentReduce}ms`);
-  console.log(`Proposed reduce: ${endProposed - startProposed}ms`);
 }
 
 benchmark();
