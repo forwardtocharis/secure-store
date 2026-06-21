@@ -10,8 +10,6 @@ new TextEncoder().encodeInto("vault-prf-v1-fixed-salt-32-bytes", PRF_SALT);
 const RP_ID = Capacitor.isNativePlatform() ? 'secure-store.pages.dev' : (typeof location !== 'undefined' ? location.hostname : 'localhost');
 
 export async function enrollPasskey(label) {
-  console.log("enrollPasskey: starting, RP_ID =", RP_ID);
-
   const createOptions = {
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)).buffer,
