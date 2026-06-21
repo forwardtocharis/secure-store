@@ -81,14 +81,16 @@ keys.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const wrappedKeys = await getWrappedKeys(c.env.KV, userId);
 
+  const keyExists = wrappedKeys.some(k => k.id === id);
+  if (!keyExists) {
+    return c.json({ error: 'Key not found' }, 404);
+  }
+
   if (wrappedKeys.length <= 1) {
     return c.json({ error: 'Cannot delete the last key' }, 400);
   }
 
   const updatedKeys = wrappedKeys.filter(k => k.id !== id);
-  if (updatedKeys.length === wrappedKeys.length) {
-    return c.json({ error: 'Key not found' }, 404);
-  }
 
   await saveWrappedKeys(c.env.KV, userId, updatedKeys);
   return c.json({ success: true });
