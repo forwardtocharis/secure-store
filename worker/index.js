@@ -18,7 +18,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 app.use('/api/*', cors({
-  origin: (origin) => ALLOWED_ORIGINS.includes(origin) ? origin : null,
+  origin: ALLOWED_ORIGINS,
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
   maxAge: 600,
