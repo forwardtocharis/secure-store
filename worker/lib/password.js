@@ -57,8 +57,17 @@ export async function verifyPassword(password, stored) {
   return timingSafeEqual(hashHex, expectedHashHex);
 }
 
+const byteToHex = [];
+for (let i = 0; i < 256; i++) {
+  byteToHex[i] = i.toString(16).padStart(2, '0');
+}
+
 function bufToHex(buf) {
-  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  let hex = '';
+  for (let i = 0; i < buf.length; i++) {
+    hex += byteToHex[buf[i]];
+  }
+  return hex;
 }
 
 function hexToBuf(hex) {
