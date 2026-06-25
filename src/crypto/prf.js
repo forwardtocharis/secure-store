@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { base64urlDecode } from './util.js';
+import { base64urlDecode, base64urlEncode } from './util.js';
 
 // WebAuthn PRF salts MUST be exactly 32 bytes long for maximum compatibility.
 const PRF_SALT = new Uint8Array(32);
@@ -112,13 +112,23 @@ export async function authenticatePasskey(credentialId, fetchChallenge) {
   return { assertion, unwrappingKey };
 }
 
+const prfKeyCache = new Map();
+
 export async function derivePRFKey(prfOutput) {
+  const cacheKey = base64urlEncode(prfOutput);
+  if (prfKeyCache.has(cacheKey)) {
+    return prfKeyCache.get(cacheKey);
+  }
+
   const raw = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey(
+  const key = await crypto.subtle.deriveKey(
     { name: "HKDF", hash: "SHA-256", salt: PRF_SALT, info: new TextEncoder().encode("mek-wrapping-v1") },
     raw,
     { name: "AES-KW", length: 256 },
     false,
     ["wrapKey", "unwrapKey"]
   );
+
+  prfKeyCache.set(cacheKey, key);
+  return key;
 }
