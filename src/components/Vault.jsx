@@ -59,9 +59,10 @@ export function Vault() {
   };
 
   const filteredItems = useMemo(() => {
+    const queryLower = searchQuery.toLowerCase();
     return items.filter(item => {
       const matchesType = filterType === 'all' || item.type === filterType;
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesSearch = item.name.toLowerCase().includes(queryLower);
       return matchesType && matchesSearch;
     });
   }, [items, filterType, searchQuery]);
