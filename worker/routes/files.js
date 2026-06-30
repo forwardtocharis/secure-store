@@ -25,6 +25,13 @@ files.post('/upload-url', async (c) => {
 // STREAMING UPLOAD: Pipes request body directly to R2
 files.put('/upload/:fileId', async (c) => {
   const { fileId } = c.req.param();
+
+  // Validate fileId is a valid UUID to prevent path traversal
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(fileId)) {
+    return c.json({ error: 'Invalid file ID format' }, 400);
+  }
+
   const r2Key = `vault/files/${fileId}`;
 
   if (!c.env.R2) return c.json({ error: 'R2 not configured' }, 500);
@@ -55,6 +62,13 @@ files.put('/upload/:fileId', async (c) => {
 // STREAMING DOWNLOAD: Pipes R2 stream directly to Response
 files.get('/:fileId', async (c) => {
   const { fileId } = c.req.param();
+
+  // Validate fileId is a valid UUID to prevent path traversal
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(fileId)) {
+    return c.json({ error: 'Invalid file ID format' }, 400);
+  }
+
   const r2Key = `vault/files/${fileId}`;
 
   if (!c.env.R2) return c.json({ error: 'R2 not configured' }, 500);
