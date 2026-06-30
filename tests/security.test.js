@@ -191,3 +191,39 @@ test('verifySession rejects token not signed with HS256 algorithm', async () => 
   assert.strictEqual(res.status, 401);
   assert.strictEqual(res.body.error, 'Invalid or expired token');
 });
+
+test('files upload route rejects path traversal fileId', async () => {
+  const filesRoute = (await import('../worker/routes/files.js')).default;
+  const handler = filesRoute.routes.find(r => r.path === '/upload/:fileId' && r.method === 'PUT').handler;
+
+  const c = {
+    req: {
+      param: () => ({ fileId: '../etc/passwd' })
+    },
+    json: (data, status) => {
+      return { status, body: data };
+    }
+  };
+
+  const res = await handler(c);
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(res.body.error, 'Invalid file ID format');
+});
+
+test('files download route rejects path traversal fileId', async () => {
+  const filesRoute = (await import('../worker/routes/files.js')).default;
+  const handler = filesRoute.routes.find(r => r.path === '/:fileId' && r.method === 'GET').handler;
+
+  const c = {
+    req: {
+      param: () => ({ fileId: '../etc/passwd' })
+    },
+    json: (data, status) => {
+      return { status, body: data };
+    }
+  };
+
+  const res = await handler(c);
+  assert.strictEqual(res.status, 400);
+  assert.strictEqual(res.body.error, 'Invalid file ID format');
+});
