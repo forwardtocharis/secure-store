@@ -59,8 +59,16 @@ export function serializeCredential(cred) {
   return obj;
 }
 
+const byteToHex = [];
+for (let i = 0; i < 256; i++) {
+  byteToHex.push(i.toString(16).padStart(2, '0'));
+}
+
 export function buf2hex(buffer) {
-  return [...new Uint8Array(buffer)]
-      .map(x => x.toString(16).padStart(2, '0'))
-      .join('');
+  const bytes = new Uint8Array(buffer || 0);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += byteToHex[bytes[i]];
+  }
+  return hex;
 }
